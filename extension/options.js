@@ -131,9 +131,10 @@ function collectTopLevel() {
 
 function validate() {
   if (!settings.weekOneMonday) return "请先设置 Week 1 的星期一。";
-  if (!settings.courses.length) return "请至少添加一门课程。";
-  for (const course of settings.courses) {
-    if (!course.name) return "每门课程都需要填写课程代码或名称。";
+  const enabledCourses = settings.courses.filter((course) => course.enabled !== false);
+  if (!enabledCourses.length) return "请至少添加并启用一门课程。";
+  for (const course of enabledCourses) {
+    if (!course.name) return "每门启用的课程都需要填写课程代码或名称。";
     if (!course.url) return `${course.name} 还没有填写课程页面链接。`;
     if (!course.sessions.length) return `${course.name} 至少需要一个班次。`;
     for (const session of course.sessions) {
@@ -210,8 +211,9 @@ document.querySelector("#importFile").addEventListener("change", async (event) =
   if (!file) return;
   try {
     const imported = normaliseSettings(JSON.parse(await file.text()));
-    if (!Array.isArray(imported.courses)) throw new Error("配置格式不正确");
     settings = imported;
+    const error = validate();
+    if (error) throw new Error(error);
     await chrome.storage.local.set({ settings });
     await chrome.runtime.sendMessage({ type: "SETTINGS_CHANGED" });
     location.reload();
