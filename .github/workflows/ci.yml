@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Test extension parser
+        run: node --test tests/*.test.mjs
+
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci
+
+      - name: Build and test site
+        working-directory: site
+        run: npm test
+
+      - name: Lint site
+        working-directory: site
+        run: npm run lint

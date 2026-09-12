@@ -9,21 +9,41 @@
 <body>
   <main>
     <div class="topbar">
-      <div><h1>自动查码设置</h1><p>按你的课程来源和时间表检查；设置只保存在这台电脑。</p></div>
+      <div><h1>自动查码设置</h1><p>添加你自己的课程、班次和提醒时间；设置只保存在这台电脑。</p></div>
       <span class="badge">本地运行</span>
     </div>
+
     <section class="card stack">
       <h2>学期与提醒</h2>
-      <label>Week 1 的星期一<input type="date" id="weekOneMonday"></label>
-      <div class="session">
-        <label>主提醒星期
-          <select id="primaryDay"><option value="0">周日</option><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option></select>
-        </label>
-        <label>时间<input type="time" id="primaryTime"></label>
-        <label>备用提醒 <input type="checkbox" id="backupEnabled"></label>
+      <p class="muted">Week 1 用于计算教学周；定时提醒按这台电脑当前的系统时区运行。</p>
+      <div class="course-grid">
+        <label>Week 1 的星期一</label><input type="date" id="weekOneMonday">
+        <label>设备时区（自动）</label><input type="text" id="timezone" readonly>
+      </div>
+      <div class="reminder-settings">
+        <div>
+          <strong>主提醒</strong>
+          <div class="session compact">
+            <select id="primaryDay" aria-label="主提醒星期"><option value="0">周日</option><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option></select>
+            <input type="time" id="primaryTime" aria-label="主提醒时间">
+          </div>
+        </div>
+        <div>
+          <label class="inline-label"><strong>备用提醒</strong> <input type="checkbox" id="backupEnabled"></label>
+          <div class="session compact">
+            <select id="backupDay" aria-label="备用提醒星期"><option value="0">周日</option><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option></select>
+            <input type="time" id="backupTime" aria-label="备用提醒时间">
+          </div>
+        </div>
       </div>
     </section>
+
+    <div class="section-title-row">
+      <div><h2>课程</h2><p>课程来源可以是 Moodle 或 Ed；每门课可以添加多个实际参加的班次。</p></div>
+      <button class="secondary" id="addCourse">＋ 添加课程</button>
+    </div>
     <section id="courses"></section>
+
     <div class="actions">
       <button class="primary" id="save">保存并启用</button>
       <button class="secondary" id="scan">保存后立即测试</button>

@@ -1,23 +1,34 @@
 # Monash Attendance Helper
 
-A local Chrome extension that checks logged-in Moodle and Ed pages on a weekly schedule, finds likely attendance codes for configured class groups, sends a notification, and shows a final confirmation screen before submitting anything to Monash Attendance.
+A local Chrome extension that checks the Moodle or Ed pages **you configure**, looks for likely attendance codes for your own class groups, sends a notification, and shows a final confirmation screen before submitting anything to Monash Attendance.
 
-The extension never uploads credentials, page content, or attendance codes to this project or its website.
+The project does **not** ship with another student's timetable as the default. Each user adds their own courses, source pages, class groups, semester Week 1 date, and reminder times.
+
+The extension never uploads credentials, page content, attendance codes, or your timetable to this project or its website.
 
 ## What it does
 
-1. Runs at the configured primary and backup reminder times.
-2. Opens each enabled source in a background tab, using the Chrome session that is already signed in.
-3. Calculates the current teaching week from the configured Week 1 Monday.
-4. Matches five-character attendance codes against the course, week, class type, class number, day, and time.
-5. Sends a system notification and opens a review page when clicked.
-6. Submits only the rows selected by the student after the student ticks the explicit attendance declaration.
+1. Uses the courses and class groups saved in your local extension settings.
+2. Runs at your configured primary and optional backup reminder times.
+3. Opens each enabled Moodle or Ed source in a background tab using the Chrome session that is already signed in.
+4. Calculates the current teaching week from the Week 1 Monday you provide.
+5. Matches five-character attendance codes against the course, week, class label, day, and time.
+6. Sends a system notification and opens a review page when clicked.
+7. Submits only the rows selected by the student after the student ticks the explicit attendance declaration.
 
-Default course routing:
+Reminder times use the **current system timezone of the computer running Chrome**. The timezone is detected automatically rather than being fixed to Malaysia.
 
-- FIT3162: current-week section on Moodle.
-- FIT2102: Ed Discussion, Malaysia category.
-- FIT2109: Ed Discussion.
+## Configure your own timetable
+
+For each course, add:
+
+- **Course code / name** — for example `FIT2004`.
+- **Source** — Moodle or Ed Discussion.
+- **Source URL** — use a supported Monash Moodle URL under `https://learning.monash.edu/` or an Ed URL under `https://edstem.org/`.
+- **Ed category** — optional; for example `Malaysia` if your Ed course uses that category.
+- **Class groups** — add every tutorial, workshop, studio, applied, seminar, or other class that you actually attend, together with its weekday and start time.
+
+There are intentionally **no default FIT3162 / FIT2102 / FIT2109 routes**. Those were the original developer's timetable and are now kept only as an example configuration under `examples/`.
 
 ## Install in Chrome
 
@@ -26,10 +37,16 @@ Default course routing:
 3. Enable **Developer mode**.
 4. Choose **Load unpacked** and select the `extension` folder.
 5. Pin **Monash Attendance Helper**.
-6. Open the extension settings, verify the class groups and reminder time, then click **Save and enable**.
-7. Keep Moodle, Ed, and Monash Attendance signed in in the same Chrome profile.
+6. Open the extension settings.
+7. Set the semester Week 1 Monday and reminder times.
+8. Add your own courses and class groups, then click **Save and enable**.
+9. Keep Moodle, Ed, and Monash Attendance signed in in the same Chrome profile.
 
-The graphical configurator can export an `attendance-helper-config.json` file. Import it from the extension settings page.
+The graphical configurator in `site/` can generate an `attendance-helper-config.json` file. Import it from the extension settings page with **Import web config**.
+
+## Example configuration
+
+`examples/mum-2026-s2-example.json` demonstrates the configuration format using one student's 2026 Semester 2 MUM timetable. It is **example data only**. Do not assume its course URLs, class groups, dates, or reminder times match your own timetable.
 
 ## Important limits
 
@@ -37,16 +54,28 @@ The graphical configurator can export an `attendance-helper-config.json` file. I
 - Course staff may change post layouts. Codes marked **Review** must be checked against the shown source text before submission.
 - A code is never proof that the student attended. Only submit a record for a class actually attended.
 - The confirmation page asks for the attendance declaration every time. It is intentionally not an unattended auto-submit bot.
+- The attendance matching logic depends on the class label you configure. Use the label staff normally write near the code, such as `Tutorial 03`, `Workshop 01`, or `Studio 2`.
 
 ## Test
 
-Run the parser tests:
+Run the extension parser tests:
 
 ```sh
 node --test tests/*.test.mjs
 ```
 
-Then load the extension unpacked and use **Save, then test now** from its settings page. The test should produce a Chrome notification and a Week review page.
+Run the site build/render tests and lint checks:
+
+```sh
+cd site
+npm ci
+npm test
+npm run lint
+```
+
+Then load the extension unpacked, configure at least one real course, and use **Save, then test now** from its settings page. The test should produce a Chrome notification and a Week review page.
+
+Pull requests also run these automated checks through GitHub Actions.
 
 ## License
 

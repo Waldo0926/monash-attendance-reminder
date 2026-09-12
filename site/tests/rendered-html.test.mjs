@@ -12,17 +12,16 @@ async function render() {
   );
 }
 
-test("renders the automatic attendance configuration surface", async () => {
+test("renders a blank per-user attendance configuration surface", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /Attendance Helper — 自动查码与确认/);
-  assert.match(html, /到点查好签到码/);
-  assert.match(html, /FIT3162/);
-  assert.match(html, /FIT2102/);
-  assert.match(html, /Malaysia/);
-  assert.match(html, /FIT2109/);
+  assert.match(html, /按你自己的课表/);
+  assert.match(html, /还没有课程/);
+  assert.match(html, /添加课程/);
+  assert.match(html, /Week 1 的星期一/);
   assert.match(html, /下载扩展配置/);
   assert.match(html, /确认后才提交/);
   assert.doesNotMatch(html, /macOS Attendance Reminder/);

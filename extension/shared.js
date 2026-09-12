@@ -1,44 +1,11 @@
 export const ATTENDANCE_URL = "https://attendance.monash.edu.my/student/Default.aspx";
 
 export const DEFAULT_SETTINGS = {
-  timezone: "Asia/Kuala_Lumpur",
-  weekOneMonday: "2026-07-27",
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kuala_Lumpur",
+  weekOneMonday: "",
   reminder: { weekday: 0, hour: 19, minute: 0 },
   backup: { enabled: true, weekday: 1, hour: 10, minute: 0 },
-  courses: [
-    {
-      id: "fit3162",
-      name: "FIT3162",
-      source: "moodle",
-      url: "https://learning.monash.edu/course/view.php?id=44555",
-      category: "",
-      sessions: [
-        { id: "studio01", label: "Studio 01", day: "Thursday", time: "17:00", aliases: ["Studio 01", "Studio 1"] }
-      ]
-    },
-    {
-      id: "fit2102",
-      name: "FIT2102",
-      source: "ed",
-      url: "https://edstem.org/au/courses/36340/discussion?category=Malaysia",
-      category: "Malaysia",
-      sessions: [
-        { id: "workshop01", label: "Workshop 01", day: "Tuesday", time: "16:00", aliases: ["Workshop 01", "Workshop 1"] },
-        { id: "tutorial09", label: "Tutorial 09", day: "Wednesday", time: "14:00", aliases: ["Tutorial 09", "Tutorial 9"] }
-      ]
-    },
-    {
-      id: "fit2109",
-      name: "FIT2109",
-      source: "ed",
-      url: "https://edstem.org/au/courses/39026/discussion",
-      category: "",
-      sessions: [
-        { id: "workshop02", label: "Workshop 02", day: "Wednesday", time: "16:00", aliases: ["Workshop 02", "Workshop 2"] },
-        { id: "tutorial05", label: "Tutorial 05", day: "Friday", time: "14:00", aliases: ["Tutorial 05", "Tutorial 5"] }
-      ]
-    }
-  ]
+  courses: []
 };
 
 export function mondayOf(date = new Date()) {
@@ -49,15 +16,19 @@ export function mondayOf(date = new Date()) {
 }
 
 export function teachingWeek(settings, now = new Date()) {
+  if (!settings?.weekOneMonday) return null;
   const anchor = new Date(`${settings.weekOneMonday}T00:00:00`);
+  if (Number.isNaN(anchor.getTime())) return null;
   const diff = mondayOf(now).getTime() - anchor.getTime();
   return Math.floor(diff / 604800000) + 1;
 }
 
 export function attendanceDate(settings, week, day) {
   const dayOffsets = { Monday: 0, Tuesday: 1, Wednesday: 2, Thursday: 3, Friday: 4, Saturday: 5, Sunday: 6 };
+  if (!settings?.weekOneMonday || !Number.isFinite(week) || !(day in dayOffsets)) return null;
   const date = new Date(`${settings.weekOneMonday}T12:00:00`);
-  date.setDate(date.getDate() + ((week - 1) * 7) + (dayOffsets[day] ?? 0));
+  if (Number.isNaN(date.getTime())) return null;
+  date.setDate(date.getDate() + ((week - 1) * 7) + dayOffsets[day]);
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return {
     iso: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
@@ -66,7 +37,7 @@ export function attendanceDate(settings, week, day) {
 }
 
 export function normalise(value) {
-  return value.toLowerCase().replace(/\s+/g, " ").trim();
+  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 export function extractCandidates(text, course, week) {
@@ -86,8 +57,8 @@ export function extractCandidates(text, course, week) {
   });
 
   const weekTokens = [`week ${week}`, `wk ${week}`, `第 ${week} 周`, `第${week}周`];
-  return course.sessions.map((session) => {
-    const aliases = [session.label, ...(session.aliases || [])].map(normalise);
+  return (course.sessions || []).map((session) => {
+    const aliases = [session.label, ...(session.aliases || [])].map(normalise).filter(Boolean);
     const ranked = hits.map((hit) => {
       const haystack = normalise(hit.context);
       const sameLine = normalise(hit.line);

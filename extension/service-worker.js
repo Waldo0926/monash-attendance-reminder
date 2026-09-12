@@ -13,9 +13,27 @@ function nextAlarm(weekday, hour, minute) {
   return target.getTime();
 }
 
+function validSchedule(item) {
+  return Number.isInteger(item?.weekday) && item.weekday >= 0 && item.weekday <= 6
+    && Number.isInteger(item?.hour) && item.hour >= 0 && item.hour <= 23
+    && Number.isInteger(item?.minute) && item.minute >= 0 && item.minute <= 59;
+}
+
+function hasUsableConfig(settings) {
+  const backupValid = !settings?.backup?.enabled || validSchedule(settings.backup);
+  return Boolean(
+    settings?.weekOneMonday
+    && validSchedule(settings?.reminder)
+    && backupValid
+    && settings?.courses?.some((course) => course.enabled !== false && course.name && course.url && course.sessions?.length)
+  );
+}
+
 async function configureAlarms() {
   const settings = await loadSettings();
   await chrome.alarms.clearAll();
+  if (!hasUsableConfig(settings)) return;
+
   await chrome.alarms.create(PRIMARY_ALARM, {
     when: nextAlarm(settings.reminder.weekday, settings.reminder.hour, settings.reminder.minute),
     periodInMinutes: 10080
@@ -57,7 +75,7 @@ async function scanCourse(course, week) {
       courseId: course.id,
       ok: false,
       error: error.message,
-      items: course.sessions.map((session) => ({
+      items: (course.sessions || []).map((session) => ({
         id: `${course.id}:${session.id}:w${week}`,
         courseId: course.id,
         course: course.name,
@@ -79,9 +97,24 @@ async function scanCourse(course, week) {
 
 async function scanAll(reason = "manual") {
   const settings = await loadSettings();
+  if (!hasUsableConfig(settings)) {
+    const result = { reason, week: null, scannedAt: new Date().toISOString(), items: [], scans: [], notConfigured: true };
+    await chrome.storage.local.set({ latestScan: result });
+    await chrome.notifications.create("attendance-scan", {
+      type: "basic",
+      iconUrl: "icons/icon128.png",
+      title: "Attendance Helper 尚未配置",
+      message: "请先在扩展设置中添加课程、班次、Week 1 日期和有效提醒时间。",
+      priority: 1
+    });
+    return result;
+  }
+
   const week = teachingWeek(settings);
+  if (!Number.isFinite(week)) throw new Error("Week 1 日期无效，请检查扩展设置。");
+
   const scans = [];
-  for (const course of settings.courses.filter((item) => item.enabled !== false)) {
+  for (const course of settings.courses.filter((item) => item.enabled !== false && item.url && item.sessions?.length)) {
     scans.push(await scanCourse(course, week));
   }
   const items = scans.flatMap((scan) => scan.items).map((item) => ({
@@ -107,6 +140,7 @@ async function scanAll(reason = "manual") {
 
 async function submitOne(item, settings) {
   const date = item.attendanceDate || attendanceDate(settings, item.week, item.day);
+  if (!date) return { ok: false, error: "无法计算签到日期，请检查 Week 1 和班次星期设置。" };
   const unitsUrl = new URL("student/Units.aspx", ATTENDANCE_URL);
   unitsUrl.hash = date.key;
   const tab = await chrome.tabs.create({ url: unitsUrl.href, active: true });
