@@ -217,7 +217,7 @@ export default function Home() {
           <div className="reminder-grid">
             {reminders.map((reminder, index) => (
               <article className="reminder-card" key={reminder.id}>
-                <div className="reminder-title"><span>{index === 0 ? "主提醒" : "备用提醒"}</span><label className="mini-toggle"><input type="checkbox" checked={reminder.enabled} disabled={index === 0} onChange={(event) => updateReminder(reminder.id, { enabled: event.target.checked })} /><span /></label></div>
+                <div className="reminder-title"><span>{index === 0 ? "主提醒" : "备用提醒"}</span><label className="mini-toggle">{index === 0 ? "固定启用" : "启用"}<input type="checkbox" checked={reminder.enabled} disabled={index === 0} onChange={(event) => updateReminder(reminder.id, { enabled: event.target.checked })} /><span /></label></div>
                 <div className="schedule-controls">
                   <select aria-label="提醒星期" value={reminder.weekday} disabled={!reminder.enabled} onChange={(event) => updateReminder(reminder.id, { weekday: Number(event.target.value) })}>{weekdays.map((day) => <option value={day.value} key={day.value}>{day.label}</option>)}</select>
                   <input aria-label="提醒时间" type="time" value={reminder.time} disabled={!reminder.enabled} onChange={(event) => updateReminder(reminder.id, { time: event.target.value })} />
