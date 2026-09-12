@@ -1,0 +1,82 @@
+{
+  "timezone": "Asia/Kuala_Lumpur",
+  "weekOneMonday": "2026-07-27",
+  "reminder": {
+    "weekday": 0,
+    "hour": 19,
+    "minute": 0
+  },
+  "backup": {
+    "enabled": true,
+    "weekday": 1,
+    "hour": 10,
+    "minute": 0
+  },
+  "courses": [
+    {
+      "id": "fit3162-example",
+      "name": "FIT3162",
+      "source": "moodle",
+      "url": "https://learning.monash.edu/course/view.php?id=44555",
+      "category": "",
+      "enabled": true,
+      "sessions": [
+        {
+          "id": "studio01-example",
+          "label": "Studio 01",
+          "day": "Thursday",
+          "time": "17:00",
+          "aliases": ["Studio 01", "Studio 1"]
+        }
+      ]
+    },
+    {
+      "id": "fit2102-example",
+      "name": "FIT2102",
+      "source": "ed",
+      "url": "https://edstem.org/au/courses/36340/discussion?category=Malaysia",
+      "category": "Malaysia",
+      "enabled": true,
+      "sessions": [
+        {
+          "id": "workshop01-example",
+          "label": "Workshop 01",
+          "day": "Tuesday",
+          "time": "16:00",
+          "aliases": ["Workshop 01", "Workshop 1"]
+        },
+        {
+          "id": "tutorial09-example",
+          "label": "Tutorial 09",
+          "day": "Wednesday",
+          "time": "14:00",
+          "aliases": ["Tutorial 09", "Tutorial 9"]
+        }
+      ]
+    },
+    {
+      "id": "fit2109-example",
+      "name": "FIT2109",
+      "source": "ed",
+      "url": "https://edstem.org/au/courses/39026/discussion",
+      "category": "",
+      "enabled": true,
+      "sessions": [
+        {
+          "id": "workshop02-example",
+          "label": "Workshop 02",
+          "day": "Wednesday",
+          "time": "16:00",
+          "aliases": ["Workshop 02", "Workshop 2"]
+        },
+        {
+          "id": "tutorial05-example",
+          "label": "Tutorial 05",
+          "day": "Friday",
+          "time": "14:00",
+          "aliases": ["Tutorial 05", "Tutorial 5"]
+        }
+      ]
+    }
+  ]
+}
