@@ -16,13 +16,15 @@ The extension never uploads credentials, page content, attendance codes, or your
 6. Sends a system notification and opens a review page when clicked.
 7. Submits only the rows selected by the student after the student ticks the explicit attendance declaration.
 
+Reminder times use the **current system timezone of the computer running Chrome**. The timezone is detected automatically rather than being fixed to Malaysia.
+
 ## Configure your own timetable
 
 For each course, add:
 
 - **Course code / name** — for example `FIT2004`.
 - **Source** — Moodle or Ed Discussion.
-- **Source URL** — the page where that course publishes attendance codes.
+- **Source URL** — use a supported Monash Moodle URL under `https://learning.monash.edu/` or an Ed URL under `https://edstem.org/`.
 - **Ed category** — optional; for example `Malaysia` if your Ed course uses that category.
 - **Class groups** — add every tutorial, workshop, studio, applied, seminar, or other class that you actually attend, together with its weekday and start time.
 
@@ -56,13 +58,24 @@ The graphical configurator in `site/` can generate an `attendance-helper-config.
 
 ## Test
 
-Run the parser tests:
+Run the extension parser tests:
 
 ```sh
 node --test tests/*.test.mjs
 ```
 
+Run the site build/render tests and lint checks:
+
+```sh
+cd site
+npm ci
+npm test
+npm run lint
+```
+
 Then load the extension unpacked, configure at least one real course, and use **Save, then test now** from its settings page. The test should produce a Chrome notification and a Week review page.
+
+Pull requests also run these automated checks through GitHub Actions.
 
 ## License
 
