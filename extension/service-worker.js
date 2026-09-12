@@ -13,8 +13,20 @@ function nextAlarm(weekday, hour, minute) {
   return target.getTime();
 }
 
+function validSchedule(item) {
+  return Number.isInteger(item?.weekday) && item.weekday >= 0 && item.weekday <= 6
+    && Number.isInteger(item?.hour) && item.hour >= 0 && item.hour <= 23
+    && Number.isInteger(item?.minute) && item.minute >= 0 && item.minute <= 59;
+}
+
 function hasUsableConfig(settings) {
-  return Boolean(settings?.weekOneMonday && settings?.courses?.some((course) => course.enabled !== false && course.url && course.sessions?.length));
+  const backupValid = !settings?.backup?.enabled || validSchedule(settings.backup);
+  return Boolean(
+    settings?.weekOneMonday
+    && validSchedule(settings?.reminder)
+    && backupValid
+    && settings?.courses?.some((course) => course.enabled !== false && course.name && course.url && course.sessions?.length)
+  );
 }
 
 async function configureAlarms() {
@@ -92,7 +104,7 @@ async function scanAll(reason = "manual") {
       type: "basic",
       iconUrl: "icons/icon128.png",
       title: "Attendance Helper 尚未配置",
-      message: "请先在扩展设置中添加课程、班次和 Week 1 日期。",
+      message: "请先在扩展设置中添加课程、班次、Week 1 日期和有效提醒时间。",
       priority: 1
     });
     return result;
