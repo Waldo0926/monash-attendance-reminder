@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS, loadSettings } from "./shared.js";
 let settings;
 const coursesRoot = document.querySelector("#courses");
 const status = document.querySelector("#status");
+const CLASS_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function escapeHtml(value = "") {
   return String(value)
@@ -13,13 +14,35 @@ function escapeHtml(value = "") {
     .replaceAll("'", "&#039;");
 }
 
+function deviceTimeZone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
 function timeValue(item) {
   return `${String(item?.hour ?? 0).padStart(2, "0")}:${String(item?.minute ?? 0).padStart(2, "0")}`;
 }
 
 function parseTime(value) {
+  if (!/^\d{2}:\d{2}$/.test(value)) return { hour: NaN, minute: NaN };
   const [hour, minute] = value.split(":").map(Number);
   return { hour, minute };
+}
+
+function validSchedule(item) {
+  return Number.isInteger(item?.weekday) && item.weekday >= 0 && item.weekday <= 6
+    && Number.isInteger(item?.hour) && item.hour >= 0 && item.hour <= 23
+    && Number.isInteger(item?.minute) && item.minute >= 0 && item.minute <= 59;
+}
+
+function validCourseUrl(course) {
+  try {
+    const url = new URL(course.url);
+    if (url.protocol !== "https:") return false;
+    if (course.source === "moodle") return url.hostname === "learning.monash.edu";
+    return url.hostname === "edstem.org" || url.hostname.endsWith(".edstem.org");
+  } catch {
+    return false;
+  }
 }
 
 function uniqueId(prefix) {
@@ -46,7 +69,8 @@ function normaliseSettings(value) {
   const base = structuredClone(DEFAULT_SETTINGS);
   return {
     ...base,
-    ...value,
+    ...(value || {}),
+    timezone: deviceTimeZone(),
     reminder: { ...base.reminder, ...(value?.reminder || {}) },
     backup: { ...base.backup, ...(value?.backup || {}) },
     courses: Array.isArray(value?.courses) ? value.courses.map((course) => ({
@@ -59,7 +83,7 @@ function normaliseSettings(value) {
       sessions: Array.isArray(course.sessions) ? course.sessions.map((session) => ({
         id: session.id || uniqueId("session"),
         label: session.label || "",
-        day: session.day || "Monday",
+        day: CLASS_DAYS.includes(session.day) ? session.day : "Monday",
         time: session.time || "09:00",
         aliases: Array.isArray(session.aliases) ? session.aliases : []
       })) : []
@@ -91,7 +115,7 @@ function renderCourses() {
           <div class="session editable" data-session="${sessionIndex}">
             <input class="label" value="${escapeHtml(session.label)}" aria-label="班次" placeholder="例如 Tutorial 03">
             <select class="day" aria-label="星期">
-              ${["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].map((day) => `<option value="${day}" ${session.day === day ? "selected" : ""}>${day}</option>`).join("")}
+              ${CLASS_DAYS.map((day) => `<option value="${day}" ${session.day === day ? "selected" : ""}>${day}</option>`).join("")}
             </select>
             <input class="time" type="time" value="${escapeHtml(session.time || "09:00")}" aria-label="时间">
             <button class="danger remove-session" type="button">删除</button>
@@ -121,7 +145,7 @@ function collectCoursesFromDom() {
 
 function collectTopLevel() {
   settings.weekOneMonday = document.querySelector("#weekOneMonday").value;
-  settings.timezone = document.querySelector("#timezone").value.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  settings.timezone = deviceTimeZone();
   settings.reminder.weekday = Number(document.querySelector("#primaryDay").value);
   Object.assign(settings.reminder, parseTime(document.querySelector("#primaryTime").value));
   settings.backup.enabled = document.querySelector("#backupEnabled").checked;
@@ -130,15 +154,27 @@ function collectTopLevel() {
 }
 
 function validate() {
-  if (!settings.weekOneMonday) return "请先设置 Week 1 的星期一。";
+  if (!settings.weekOneMonday || Number.isNaN(new Date(`${settings.weekOneMonday}T00:00:00`).getTime())) {
+    return "请设置有效的 Week 1 星期一日期。";
+  }
+  if (!validSchedule(settings.reminder)) return "请填写完整且有效的主提醒时间。";
+  if (settings.backup.enabled && !validSchedule(settings.backup)) return "请填写完整且有效的备用提醒时间。";
+
   const enabledCourses = settings.courses.filter((course) => course.enabled !== false);
   if (!enabledCourses.length) return "请至少添加并启用一门课程。";
   for (const course of enabledCourses) {
     if (!course.name) return "每门启用的课程都需要填写课程代码或名称。";
     if (!course.url) return `${course.name} 还没有填写课程页面链接。`;
+    if (!validCourseUrl(course)) {
+      return course.source === "moodle"
+        ? `${course.name} 的 Moodle 链接必须来自 learning.monash.edu。`
+        : `${course.name} 的 Ed 链接必须来自 edstem.org。`;
+    }
     if (!course.sessions.length) return `${course.name} 至少需要一个班次。`;
     for (const session of course.sessions) {
-      if (!session.label || !session.day || !session.time) return `${course.name} 有班次信息未填写完整。`;
+      if (!session.label || !CLASS_DAYS.includes(session.day) || !/^\d{2}:\d{2}$/.test(session.time)) {
+        return `${course.name} 有班次信息未填写完整。`;
+      }
     }
   }
   return "";
@@ -161,7 +197,7 @@ async function collectAndSave() {
 async function init() {
   settings = normaliseSettings(await loadSettings());
   document.querySelector("#weekOneMonday").value = settings.weekOneMonday || "";
-  document.querySelector("#timezone").value = settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  document.querySelector("#timezone").value = deviceTimeZone();
   document.querySelector("#primaryDay").value = settings.reminder.weekday;
   document.querySelector("#primaryTime").value = timeValue(settings.reminder);
   document.querySelector("#backupEnabled").checked = settings.backup.enabled;
@@ -210,8 +246,9 @@ document.querySelector("#importFile").addEventListener("change", async (event) =
   const file = event.target.files?.[0];
   if (!file) return;
   try {
-    const imported = normaliseSettings(JSON.parse(await file.text()));
-    settings = imported;
+    const parsed = JSON.parse(await file.text());
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.courses)) throw new Error("配置格式不正确");
+    settings = normaliseSettings(parsed);
     const error = validate();
     if (error) throw new Error(error);
     await chrome.storage.local.set({ settings });
