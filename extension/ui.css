@@ -1,0 +1,37 @@
+:root { color-scheme: light; --ink:#10223a; --muted:#62738a; --line:#dbe4ef; --blue:#0969da; --navy:#092a4a; --green:#12865c; --amber:#a76500; --bg:#f4f7fb; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; }
+main { width:min(980px,calc(100% - 32px)); margin:32px auto; }
+.popup { width:360px; margin:0; padding:18px; background:#fff; }
+h1 { margin:0 0 6px; font-size:28px; letter-spacing:-.03em; }
+h2 { margin:0; font-size:18px; }
+p { margin:6px 0; color:var(--muted); }
+.topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:22px; }
+.badge { display:inline-flex; align-items:center; gap:7px; color:var(--green); font-weight:700; }
+.badge::before { content:""; width:8px; height:8px; background:var(--green); border-radius:50%; }
+.card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:18px; margin:12px 0; box-shadow:0 8px 28px rgba(21,54,92,.06); }
+.row { display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.stack { display:grid; gap:12px; }
+label { font-weight:650; }
+input,select,button { font:inherit; }
+input[type="url"],input[type="text"],input[type="date"],input[type="time"],select { width:100%; border:1px solid #bccadb; border-radius:10px; background:#fff; color:var(--ink); padding:10px 12px; }
+button { border:0; border-radius:10px; padding:11px 14px; cursor:pointer; font-weight:750; }
+button.primary { background:var(--blue); color:#fff; }
+button.secondary { background:#eaf2fc; color:var(--blue); }
+button:disabled { opacity:.45; cursor:not-allowed; }
+.course { border-left:4px solid var(--blue); }
+.course-grid { display:grid; grid-template-columns:120px 1fr; gap:10px 14px; align-items:center; margin-top:12px; }
+.session { display:grid; grid-template-columns:1fr 130px 110px; gap:10px; margin-top:8px; }
+.status { font-size:13px; font-weight:700; border-radius:999px; padding:4px 9px; background:#eef3f8; color:var(--muted); }
+.status.high { background:#e5f7ef; color:var(--green); }
+.status.review { background:#fff3d6; color:var(--amber); }
+.status.missing { background:#f2f4f7; }
+.code { font:800 22px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.08em; }
+.context { margin-top:10px; padding:10px 12px; border-radius:10px; background:#f7f9fc; color:#51627a; font-size:13px; }
+.confirm { border:1px solid #b9cce2; background:#f8fbff; }
+.confirm input { width:18px; height:18px; }
+.danger-note { color:#9c2f24; font-weight:650; }
+.muted { color:var(--muted); font-size:13px; }
+.actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
+.empty { text-align:center; padding:30px 12px; }
+@media (max-width:700px) { main { width:min(100% - 20px,980px); margin:18px auto; } .course-grid,.session { grid-template-columns:1fr; } }

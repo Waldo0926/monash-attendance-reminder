@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="ui.css">
+  <title>Attendance Helper 设置</title>
+</head>
+<body>
+  <main>
+    <div class="topbar">
+      <div><h1>自动查码设置</h1><p>按你的课程来源和时间表检查；设置只保存在这台电脑。</p></div>
+      <span class="badge">本地运行</span>
+    </div>
+    <section class="card stack">
+      <h2>学期与提醒</h2>
+      <label>Week 1 的星期一<input type="date" id="weekOneMonday"></label>
+      <div class="session">
+        <label>主提醒星期
+          <select id="primaryDay"><option value="0">周日</option><option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option></select>
+        </label>
+        <label>时间<input type="time" id="primaryTime"></label>
+        <label>备用提醒 <input type="checkbox" id="backupEnabled"></label>
+      </div>
+    </section>
+    <section id="courses"></section>
+    <div class="actions">
+      <button class="primary" id="save">保存并启用</button>
+      <button class="secondary" id="scan">保存后立即测试</button>
+      <button class="secondary" id="import">导入网页配置</button>
+      <input type="file" id="importFile" accept="application/json" hidden>
+    </div>
+    <p id="status"></p>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

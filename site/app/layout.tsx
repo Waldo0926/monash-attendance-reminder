@@ -6,8 +6,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Attendance Helper — Monash 签到提醒设置器",
-  description: "配置课程页面和提醒时间，生成本地运行的 macOS Attendance Reminder。",
+  title: "Attendance Helper — 自动查码与确认",
+  description: "配置本地 Chrome 扩展，定时从 Moodle 与 Ed 查找 Monash 签到码，并在本人确认后提交。",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

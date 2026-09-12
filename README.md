@@ -1,35 +1,52 @@
-# Monash Attendance Reminder
+# Monash Attendance Helper
 
-This small macOS helper opens the configured course attendance-code sources and the Monash Attendance page in Google Chrome. It is intended to prevent forgotten submissions while keeping the final attendance confirmation manual.
+A local Chrome extension that checks logged-in Moodle and Ed pages on a weekly schedule, finds likely attendance codes for configured class groups, sends a notification, and shows a final confirmation screen before submitting anything to Monash Attendance.
 
-> This project does not collect credentials, extract attendance codes, or submit attendance on a student's behalf. Only record attendance when you actually attended the class.
+The extension never uploads credentials, page content, or attendance codes to this project or its website.
 
-## Schedule
+## What it does
 
-- Sunday at 7:00 PM
-- Monday at 10:00 AM (backup reminder)
+1. Runs at the configured primary and backup reminder times.
+2. Opens each enabled source in a background tab, using the Chrome session that is already signed in.
+3. Calculates the current teaching week from the configured Week 1 Monday.
+4. Matches five-character attendance codes against the course, week, class type, class number, day, and time.
+5. Sends a system notification and opens a review page when clicked.
+6. Submits only the rows selected by the student after the student ticks the explicit attendance declaration.
 
-## Install
+Default course routing:
 
-Double-click `install.command`. macOS may ask for permission to run it. The installer opens all four pages once so you can verify the setup.
+- FIT3162: current-week section on Moodle.
+- FIT2102: Ed Discussion, Malaysia category.
+- FIT2109: Ed Discussion.
 
-The helper uses the login sessions already present in Google Chrome. It does not read or store passwords and does not submit attendance codes.
+## Install in Chrome
 
-The bundled URLs and schedule are configured for the current Monash units. Edit `attendance-reminder.sh` and `com.monash.attendance-reminder.plist` before installing if your units or preferred reminder times differ.
+1. Download this repository and unzip it.
+2. Open `chrome://extensions`.
+3. Enable **Developer mode**.
+4. Choose **Load unpacked** and select the `extension` folder.
+5. Pin **Monash Attendance Helper**.
+6. Open the extension settings, verify the class groups and reminder time, then click **Save and enable**.
+7. Keep Moodle, Ed, and Monash Attendance signed in in the same Chrome profile.
 
-## Run manually
+The graphical configurator can export an `attendance-helper-config.json` file. Import it from the extension settings page.
 
-Double-click `attendance-reminder.sh`, or run it from Terminal.
+## Important limits
 
-## Uninstall
+- The computer must be awake and Chrome must be able to run at the scheduled time. Chrome will normally deliver a missed alarm after it next starts, but an expired login still needs the student to sign in again.
+- Course staff may change post layouts. Codes marked **Review** must be checked against the shown source text before submission.
+- A code is never proof that the student attended. Only submit a record for a class actually attended.
+- The confirmation page asks for the attendance declaration every time. It is intentionally not an unattended auto-submit bot.
 
-Run these commands in Terminal:
+## Test
+
+Run the parser tests:
 
 ```sh
-launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.monash.attendance-reminder.plist"
-rm "$HOME/Library/LaunchAgents/com.monash.attendance-reminder.plist"
-rm -r "$HOME/Library/Application Support/MonashAttendanceReminder"
+node --test tests/*.test.mjs
 ```
+
+Then load the extension unpacked and use **Save, then test now** from its settings page. The test should produce a Chrome notification and a Week review page.
 
 ## License
 
