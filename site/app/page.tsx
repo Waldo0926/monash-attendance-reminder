@@ -49,13 +49,28 @@ function sessionAliases(label: string) {
 }
 
 function isValidSession(session: Session) {
-  return Boolean(session.label.trim() && session.day && session.time);
+  return Boolean(session.label.trim() && classDays.includes(session.day) && /^\d{2}:\d{2}$/.test(session.time));
+}
+
+function isValidReminder(reminder: Reminder) {
+  return Number.isInteger(reminder.weekday) && reminder.weekday >= 0 && reminder.weekday <= 6
+    && /^\d{2}:\d{2}$/.test(reminder.time);
+}
+
+function isValidCourseUrl(course: Course) {
+  try {
+    const url = new URL(course.url);
+    if (url.protocol !== "https:") return false;
+    if (course.source === "moodle") return url.hostname === "learning.monash.edu";
+    return url.hostname === "edstem.org" || url.hostname.endsWith(".edstem.org");
+  } catch {
+    return false;
+  }
 }
 
 export default function Home() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [weekOneMonday, setWeekOneMonday] = useState("");
-  const [timezone, setTimezone] = useState("Asia/Kuala_Lumpur");
   const [reminders, setReminders] = useState<Reminder[]>([
     { id: "primary", weekday: 0, time: "19:00", enabled: true },
     { id: "backup", weekday: 1, time: "10:00", enabled: true },
@@ -63,11 +78,13 @@ export default function Home() {
   const [downloaded, setDownloaded] = useState(false);
 
   const activeCourses = useMemo(
-    () => courses.filter((course) => course.enabled && course.name.trim() && course.url.trim() && course.sessions.some(isValidSession)),
+    () => courses.filter((course) => course.enabled && course.name.trim() && isValidCourseUrl(course) && course.sessions.some(isValidSession)),
     [courses],
   );
   const activeReminders = useMemo(() => reminders.filter((reminder) => reminder.enabled), [reminders]);
-  const configurationReady = Boolean(weekOneMonday && activeCourses.length && activeReminders.length);
+  const remindersValid = activeReminders.length > 0 && activeReminders.every(isValidReminder);
+  const hasInvalidCourseUrl = courses.some((course) => course.enabled && course.url.trim() && !isValidCourseUrl(course));
+  const configurationReady = Boolean(weekOneMonday && activeCourses.length && remindersValid);
 
   const updateCourse = (id: string, patch: Partial<Course>) => {
     setCourses((current) => current.map((course) => course.id === id ? { ...course, ...patch } : course));
@@ -102,7 +119,7 @@ export default function Home() {
     const [primaryHour, primaryMinute] = primary.time.split(":").map(Number);
     const [backupHour, backupMinute] = backup.time.split(":").map(Number);
     const config = {
-      timezone: timezone.trim() || "Asia/Kuala_Lumpur",
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       weekOneMonday,
       reminder: { weekday: primary.weekday, hour: primaryHour, minute: primaryMinute },
       backup: { enabled: backup.enabled, weekday: backup.weekday, hour: backupHour, minute: backupMinute },
@@ -155,10 +172,10 @@ export default function Home() {
 
       <section className="builder" aria-label="扩展设置器">
         <div className="form-column">
-          <div className="section-heading"><span>01</span><div><h2>学期设置</h2><p>Week 1 日期用于计算当前教学周；时区默认马来西亚，可自行修改。</p></div></div>
+          <div className="section-heading"><span>01</span><div><h2>学期设置</h2><p>Week 1 日期用于计算当前教学周；提醒按你的电脑或浏览器当前时区运行。</p></div></div>
           <div className="setup-grid">
             <label><span>Week 1 的星期一</span><input className="text-input" type="date" value={weekOneMonday} onChange={(event) => { setWeekOneMonday(event.target.value); setDownloaded(false); }} /></label>
-            <label><span>时区</span><input className="text-input" value={timezone} onChange={(event) => { setTimezone(event.target.value); setDownloaded(false); }} placeholder="Asia/Kuala_Lumpur" /></label>
+            <label><span>设备时区</span><input className="text-input" value="自动使用当前设备时区" disabled readOnly /></label>
           </div>
 
           <div className="section-heading schedule-heading"><span>02</span><div><h2>课程来源</h2><p>添加你自己的课程。课程代码、Moodle / Ed 页面、板块和班次都可以独立设置。</p></div></div>
@@ -216,12 +233,14 @@ export default function Home() {
           <div className="summary-sticky">
             <div className="summary-label">YOUR SETUP</div><h2>自动流程</h2>
             <div className="summary-block"><span className="summary-kicker">课程</span>{activeCourses.length ? activeCourses.map((course) => <div className="summary-row" key={course.id}><span className="check">✓</span><span>{course.name}</span><span>{course.source === "moodle" ? "Moodle" : "Ed"}</span></div>) : <div className="empty-state">尚未添加完整课程。</div>}</div>
-            <div className="summary-block"><span className="summary-kicker">提醒</span>{activeReminders.map((reminder) => <div className="summary-row" key={reminder.id}><span className="clock-dot" /><span>{weekdays.find((day) => day.value === reminder.weekday)?.label}</span><strong>{reminder.time}</strong></div>)}</div>
+            <div className="summary-block"><span className="summary-kicker">提醒</span>{activeReminders.map((reminder) => <div className="summary-row" key={reminder.id}><span className="clock-dot" /><span>{weekdays.find((day) => day.value === reminder.weekday)?.label}</span><strong>{reminder.time || "未设置"}</strong></div>)}</div>
             <button className="primary-button" onClick={generateConfig} disabled={!configurationReady}>下载扩展配置 <span>↓</span></button>
             <a className="secondary-button" href="https://github.com/Waldo0926/monash-attendance-reminder/archive/refs/heads/main.zip">下载 Chrome 扩展</a>
             <button className="secondary-button" onClick={testPages} disabled={!activeCourses.length}>测试课程登录状态 ↗</button>
             {downloaded && <div className="download-note" role="status">配置已生成。安装扩展后打开“设置 → 导入网页配置”。</div>}
             {!weekOneMonday && <div className="download-note">生成配置前，请先填写 Week 1 的星期一。</div>}
+            {!remindersValid && <div className="download-note">请填写完整的提醒时间。</div>}
+            {hasInvalidCourseUrl && <div className="download-note">Moodle 链接必须来自 learning.monash.edu；Ed 链接必须来自 edstem.org。</div>}
             <p className="privacy-note"><span>●</span>登录状态、课程页面内容和签到码留在本机，不会上传到本站。</p>
           </div>
         </aside>
