@@ -1,8 +1,8 @@
 # Monash Attendance Helper
 
-A local Chrome extension that checks the Moodle or Ed pages **you configure**, looks for likely attendance codes for your own class groups, sends a notification, and shows a final confirmation screen before submitting anything to Monash Attendance.
+A configurable Chrome extension that finds Monash attendance codes from Moodle and Ed, reminds students, and submits only after confirmation.
 
-The project does **not** ship with another student's timetable as the default. Each user adds their own courses, source pages, class groups, semester Week 1 date, and reminder times.
+Each user configures their own course sources, class groups, semester Week 1 date, and reminder schedule. The project does **not** ship with another student's timetable as the default.
 
 The extension never uploads credentials, page content, attendance codes, or your timetable to this project or its website.
 
