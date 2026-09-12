@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { attendanceDate, extractCandidates, teachingWeek } from "../extension/shared.js";
+import { DEFAULT_SETTINGS, attendanceDate, extractCandidates, teachingWeek } from "../extension/shared.js";
+
+test("ships with a blank per-user course configuration", () => {
+  assert.deepEqual(DEFAULT_SETTINGS.courses, []);
+  assert.equal(DEFAULT_SETTINGS.weekOneMonday, "");
+  assert.equal(teachingWeek(DEFAULT_SETTINGS, new Date("2026-09-13T12:00:00+08:00")), null);
+});
 
 test("calculates Week 1 and Week 7 from the configured Monday", () => {
   const settings = { weekOneMonday: "2026-07-27" };
