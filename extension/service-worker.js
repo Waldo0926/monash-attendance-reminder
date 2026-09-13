@@ -83,7 +83,7 @@ async function discoverAttendance(settings) {
   const items = [];
   const errors = [];
   for (const date of dates) {
-    const url = new URL("student/Units.aspx", ATTENDANCE_URL);
+    const url = new URL("Units.aspx", ATTENDANCE_URL);
     url.hash = date.key;
     const tab = await chrome.tabs.create({ url: url.href, active: false });
     try {
@@ -267,7 +267,7 @@ async function scanAll(reason = "manual") {
 async function submitOne(item, settings) {
   const date = item.attendanceDate || attendanceDate(settings, item.week, item.day);
   if (!date) return { ok: false, error: "无法计算签到日期，请检查 Week 1 和班次星期设置。" };
-  const unitsUrl = new URL("student/Units.aspx", ATTENDANCE_URL);
+  const unitsUrl = new URL("Units.aspx", ATTENDANCE_URL);
   unitsUrl.hash = date.key;
   const tab = await chrome.tabs.create({ url: unitsUrl.href, active: true });
   await waitForLoaded(tab.id);
