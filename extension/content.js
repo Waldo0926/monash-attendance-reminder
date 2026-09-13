@@ -1,7 +1,10 @@
+// Must be read off the live, rendered body. innerText only produces line breaks for
+// blocks and tabs between table cells when the element is actually laid out; on a
+// detached clone it silently degrades to textContent, which glues every cell and
+// paragraph together ("WorkshopWednesday, 9 Sep024:00PMSQP3R") and no code survives.
+// Script/style/noscript aren't rendered, so innerText already excludes them.
 function visibleText() {
-  const clone = document.body.cloneNode(true);
-  clone.querySelectorAll("script,style,noscript,svg").forEach((node) => node.remove());
-  return clone.innerText || clone.textContent || "";
+  return document.body.innerText || "";
 }
 
 function sleep(ms) {
@@ -60,10 +63,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       // Gmail's message list has no <a href> per message; each row carries the thread id
       // as a data attribute instead, and that id is enough to open the thread by URL.
       const gmailThreads = location.hostname === "mail.google.com"
-        ? [...document.querySelectorAll("[data-legacy-thread-id]")].map((node) => ({
-          id: node.getAttribute("data-legacy-thread-id"),
-          label: (node.closest("tr")?.innerText || node.innerText || "").replace(/\s+/g, " ").trim()
-        })).filter((thread) => thread.id)
+        ? [...document.querySelectorAll("[data-legacy-thread-id],[data-thread-id]")].map((node) => {
+          // Either the hex legacy id, or "#thread-f:<decimal>" which is the same number in base 10.
+          const legacy = node.getAttribute("data-legacy-thread-id");
+          const decimal = node.getAttribute("data-thread-id")?.match(/(\d{15,})/)?.[1];
+          const id = legacy || (decimal ? BigInt(decimal).toString(16) : "");
+          return { id, label: (node.closest("tr")?.innerText || node.innerText || "").replace(/\s+/g, " ").trim() };
+        }).filter((thread) => thread.id)
         : [];
       sendResponse({
         ok: true,

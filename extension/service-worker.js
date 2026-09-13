@@ -158,8 +158,8 @@ async function automaticSourceScans(items, settings) {
     for (const [id] of wanted) await scan(`${gmailBase}#all/${id}`, { maxMs: 15000 });
   }
 
-  const edDashboard = await readPage("https://edstem.org/au/dashboard");
-  const edCourses = findCourseLinks(edDashboard.links, codes, {
+  const edDashboard = await scan("https://edstem.org/au/dashboard");
+  const edCourses = findCourseLinks(edDashboard?.links, codes, {
     hrefPattern: /\/courses\/\d+/,
     normaliseHref: (href) => href.replace(/(\/courses\/\d+).*$/, "$1/discussion")
   });
@@ -169,8 +169,8 @@ async function automaticSourceScans(items, settings) {
     for (const threadUrl of edThreadLinks(list.links)) await scan(threadUrl);
   }
 
-  const myUnits = await readPage("https://learning.monash.edu/my/courses.php");
-  const moodleCourses = findCourseLinks(myUnits.links, codes, {
+  const myUnits = await scan("https://learning.monash.edu/my/courses.php");
+  const moodleCourses = findCourseLinks(myUnits?.links, codes, {
     hrefPattern: /\/course\/view\.php\?id=\d+/,
     normaliseHref: (href) => href.replace(/(\/course\/view\.php\?id=\d+).*$/, "$1")
   });
@@ -249,7 +249,9 @@ async function scanAll(reason = "manual") {
     }
     // Keep only a summary of each scan: full page text for a dozen pages would blow past
     // chrome.storage.local's quota and make the whole save fail silently.
-    const scans = sourceScans.map(({ ok, url, error, text }) => ({ ok, url, error, textLength: (text || "").length }));
+    const scans = sourceScans.map(({ ok, url, error, text, links, gmailThreads }) => ({
+      ok, url, error, textLength: (text || "").length, linkCount: (links || []).length, threadCount: (gmailThreads || []).length
+    }));
     const result = { reason, mode: "attendance-discovery", week: null, scannedAt: new Date().toISOString(), items, scans, discoveryErrors: discovered.errors };
     await chrome.storage.local.set({ latestScan: result });
     const found = items.filter((item) => item.code).length;

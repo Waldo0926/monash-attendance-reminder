@@ -25,7 +25,7 @@ async function render() {
   scanLog.hidden = !scans.length && !(latestScan.discoveryErrors || []).length;
   document.querySelector("#scanList").innerHTML = [
     ...(latestScan.discoveryErrors || []).map((error) => `<li class="scan-failed">Attendance：${escapeHtml(error)}</li>`),
-    ...scans.map((scan) => `<li class="${scan.ok ? "scan-ok" : "scan-failed"}">${scan.ok ? "✓" : "✗"} <a href="${escapeHtml(scan.url)}" target="_blank">${escapeHtml(scan.url)}</a>${scan.ok ? ` · ${scan.textLength ?? 0} 字` : ` · ${escapeHtml(scan.error || "失败")}`}</li>`)
+    ...scans.map((scan) => `<li class="${scan.ok ? "scan-ok" : "scan-failed"}">${scan.ok ? "✓" : "✗"} <a href="${escapeHtml(scan.url)}" target="_blank">${escapeHtml(scan.url)}</a>${scan.ok ? ` · ${scan.textLength ?? 0} 字 · ${scan.linkCount ?? 0} 链接${scan.threadCount ? ` · ${scan.threadCount} 封邮件` : ""}` : ` · ${escapeHtml(scan.error || "失败")}`}</li>`)
   ].join("");
 }
 
