@@ -1,4 +1,4 @@
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, hasUsableConfig, loadSettings, matchCodesToAttendance, parseDateKey, recentAttendanceDates, teachingWeek } from "./shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, loadSettings, matchCodesToAttendance, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, teachingWeek } from "./shared.js";
 
 const PRIMARY_ALARM = "attendance-primary";
 const BACKUP_ALARM = "attendance-backup";
@@ -66,6 +66,22 @@ function sessionName(label, course) {
   return (match?.[0] || withoutCourse || "Scheduled activity").trim();
 }
 
+// Opens a page in a background tab, lets content.js wait for it to finish rendering,
+// and returns its visible text plus every link on it. Never throws.
+async function readPage(url) {
+  const tab = await chrome.tabs.create({ url, active: false });
+  try {
+    await waitForLoaded(tab.id);
+    const page = await chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE" });
+    if (page.loginRequired) throw new Error("需要重新登录");
+    return { ok: true, url, text: page.text || "", links: page.links || [] };
+  } catch (error) {
+    return { ok: false, url, error: error.message, text: "", links: [] };
+  } finally {
+    if (tab.id) await chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
 async function discoverAttendance(settings) {
   const dates = recentAttendanceDates(new Date(), Number(settings.lookbackDays) || 7);
   const isoWindow = new Set(dates.map((date) => date.iso));
@@ -74,125 +90,126 @@ async function discoverAttendance(settings) {
   for (const date of dates) {
     const url = new URL("Units.aspx", ATTENDANCE_URL);
     url.hash = date.key;
-    const tab = await chrome.tabs.create({ url: url.href, active: false });
-    try {
-      await waitForLoaded(tab.id);
-      const page = await chrome.tabs.sendMessage(tab.id, { type: "DISCOVER_ATTENDANCE_SESSIONS" });
-      for (const link of page.links || []) {
-        const course = link.label.match(/\b[A-Z]{3}\d{4}\b/i)?.[0]?.toUpperCase();
-        if (!course) continue;
-        // Units.aspx preloads several days of sessions into the DOM at once and only
-        // expands the one matching the hash, so the real date lives in the link's own
-        // "d=" query param, not in whichever date this tab happened to be opened for.
-        const linkDate = parseDateKey(new URL(link.href).searchParams.get("d"));
-        if (!linkDate || !isoWindow.has(linkDate.iso)) continue;
-        const label = sessionName(link.label, course);
-        const time = link.label.match(/\b\d{1,2}:\d{2}\s?[ap]m\b/i)?.[0] || "";
-        items.push({
-          id: `attendance:${linkDate.iso}:${link.href}`,
-          courseId: course.toLowerCase(),
-          course,
-          sessionId: label.toLowerCase().replace(/\W+/g, "-"),
-          session: label,
-          attendanceLabel: link.label,
-          day: new Date(`${linkDate.iso}T12:00:00`).toLocaleDateString("en-US", { weekday: "long" }),
-          time,
-          week: null,
-          code: "",
-          confidence: "missing",
-          context: "",
-          entryUrl: link.href,
-          sourceUrl: link.href,
-          attendanceDate: linkDate
-        });
-      }
-    } catch (error) {
-      errors.push(`${date.iso}: ${error.message}`);
-    } finally {
-      if (tab.id) await chrome.tabs.remove(tab.id).catch(() => {});
+    const page = await readPage(url.href);
+    if (!page.ok) {
+      errors.push(`${date.iso}: ${page.error}`);
+      continue;
+    }
+    for (const link of page.links.filter((link) => link.href.includes("Entry.aspx"))) {
+      const course = link.label.match(/\b[A-Z]{3}\d{4}\b/i)?.[0]?.toUpperCase();
+      if (!course) continue;
+      // Units.aspx preloads several days of sessions into the DOM at once and only
+      // expands the one matching the hash, so the real date lives in the link's own
+      // "d=" query param, not in whichever date this tab happened to be opened for.
+      const linkDate = parseDateKey(new URL(link.href).searchParams.get("d"));
+      if (!linkDate || !isoWindow.has(linkDate.iso)) continue;
+      const label = sessionName(link.label, course);
+      const time = link.label.match(/\b\d{1,2}:\d{2}\s?[ap]m\b/i)?.[0] || "";
+      items.push({
+        id: `attendance:${linkDate.iso}:${link.href}`,
+        courseId: course.toLowerCase(),
+        course,
+        sessionId: label.toLowerCase().replace(/\W+/g, "-"),
+        session: label,
+        attendanceLabel: link.label,
+        day: new Date(`${linkDate.iso}T12:00:00`).toLocaleDateString("en-US", { weekday: "long" }),
+        time,
+        week: null,
+        code: "",
+        confidence: "missing",
+        context: "",
+        entryUrl: link.href,
+        sourceUrl: link.href,
+        attendanceDate: linkDate
+      });
     }
   }
   return { items: [...new Map(items.map((item) => [item.id, item])).values()], errors };
 }
 
-async function scanTextUrl(url) {
-  const tab = await chrome.tabs.create({ url, active: false });
-  try {
-    await waitForLoaded(tab.id);
-    // No extra fixed sleep here: content.js's own SCAN_SOURCE handler already waits for
-    // the page's rendered text to stop changing before it responds.
-    const page = await chrome.tabs.sendMessage(tab.id, { type: "SCAN_SOURCE" });
-    if (page.loginRequired) throw new Error("需要重新登录");
-    return { ok: true, url, text: page.text || "" };
-  } catch (error) {
-    return { ok: false, url, error: error.message, text: "" };
-  } finally {
-    if (tab.id) await chrome.tabs.remove(tab.id).catch(() => {});
-  }
-}
-
-async function discoverCourseUrls(dashboardUrl, courseCodes) {
-  const tab = await chrome.tabs.create({ url: dashboardUrl, active: false });
-  try {
-    await waitForLoaded(tab.id);
-    const page = await chrome.tabs.sendMessage(tab.id, { type: "DISCOVER_COURSE_LINKS", courseCodes });
-    return [...new Set((page.links || []).map((item) => item.href))].slice(0, 20);
-  } catch {
-    return [];
-  } finally {
-    if (tab.id) await chrome.tabs.remove(tab.id).catch(() => {});
-  }
-}
-
-async function automaticSourceScans(items) {
+// Codes are never on the landing pages. Ed puts them inside an announcement thread,
+// Moodle inside the current week's section page. So this walks:
+//   Ed dashboard -> each unit's discussion list -> threads titled attendance/code/week N
+//   Moodle "My units" -> each unit's home page -> the section pages for this week ±1
+// and finally a Gmail search, scanning every page it opens along the way.
+async function automaticSourceScans(items, settings) {
   const codes = [...new Set(items.map((item) => item.course).filter(Boolean))];
   if (!codes.length) return [];
-  const dates = items.map((item) => item.attendanceDate?.iso).filter(Boolean).sort();
-  const after = dates[0]?.replaceAll("-", "/");
-  const beforeDate = new Date(`${dates.at(-1)}T12:00:00`);
-  beforeDate.setDate(beforeDate.getDate() + 1);
-  const before = `${beforeDate.getFullYear()}/${String(beforeDate.getMonth() + 1).padStart(2, "0")}/${String(beforeDate.getDate()).padStart(2, "0")}`;
-  const query = `(${codes.join(" OR ")}) attendance after:${after} before:${before}`;
-  const gmailTabs = await chrome.tabs.query({ url: "https://mail.google.com/*" });
-  const gmailBase = gmailTabs[0]?.url?.match(/^(https:\/\/mail\.google\.com\/mail\/u\/\d+\/)/)?.[1] || "https://mail.google.com/mail/";
-  const urls = [`${gmailBase}#search/${encodeURIComponent(query)}`];
-  urls.push(...await discoverCourseUrls("https://learning.monash.edu/my/courses.php", codes));
-  urls.push(...await discoverCourseUrls("https://edstem.org/au/dashboard", codes));
   const scans = [];
-  for (const url of [...new Set(urls)]) scans.push(await scanTextUrl(url));
+  const visited = new Set();
+  const scan = async (url) => {
+    if (!url || visited.has(url)) return null;
+    visited.add(url);
+    const page = await readPage(url);
+    scans.push(page);
+    return page;
+  };
+
+  const edDashboard = await readPage("https://edstem.org/au/dashboard");
+  const edCourses = findCourseLinks(edDashboard.links, codes, {
+    hrefPattern: /\/courses\/\d+/,
+    normaliseHref: (href) => href.replace(/(\/courses\/\d+).*$/, "$1/discussion")
+  });
+  for (const course of edCourses.slice(0, 8)) {
+    const list = await scan(course.href);
+    if (!list?.ok) continue;
+    for (const threadUrl of edThreadLinks(list.links)) await scan(threadUrl);
+  }
+
+  const myUnits = await readPage("https://learning.monash.edu/my/courses.php");
+  const moodleCourses = findCourseLinks(myUnits.links, codes, {
+    hrefPattern: /\/course\/view\.php\?id=\d+/,
+    normaliseHref: (href) => href.replace(/(\/course\/view\.php\?id=\d+).*$/, "$1")
+  });
+  const itemDates = [...new Set(items.map((item) => item.attendanceDate?.iso).filter(Boolean))];
+  for (const course of moodleCourses.slice(0, 8)) {
+    const home = await scan(course.href);
+    if (!home?.ok) continue;
+    const weekOneMonday = settings.weekOneMonday || detectWeekOneMonday(home.text);
+    const targetWeeks = weekOneMonday
+      ? [...new Set(itemDates.map((iso) => teachingWeek({ weekOneMonday }, new Date(`${iso}T12:00:00`))))]
+      : [];
+    const weekLinks = moodleWeekLinks(home.links);
+    for (const week of pickWeekNumbers(weekLinks.keys(), targetWeeks)) await scan(weekLinks.get(week));
+  }
+
+  const sorted = itemDates.slice().sort();
+  if (sorted.length) {
+    const after = sorted[0].replaceAll("-", "/");
+    const beforeDate = new Date(`${sorted.at(-1)}T12:00:00`);
+    beforeDate.setDate(beforeDate.getDate() + 1);
+    const before = `${beforeDate.getFullYear()}/${String(beforeDate.getMonth() + 1).padStart(2, "0")}/${String(beforeDate.getDate()).padStart(2, "0")}`;
+    const query = `(${codes.join(" OR ")}) attendance after:${after} before:${before}`;
+    const gmailTabs = await chrome.tabs.query({ url: "https://mail.google.com/*" });
+    const gmailBase = gmailTabs[0]?.url?.match(/^(https:\/\/mail\.google\.com\/mail\/u\/\d+\/)/)?.[1] || "https://mail.google.com/mail/";
+    await scan(`${gmailBase}#search/${encodeURIComponent(query)}`);
+  }
+
   return scans;
 }
 
 async function scanCourse(course, week) {
-  const tab = await chrome.tabs.create({ url: course.url, active: false });
-  try {
-    await waitForLoaded(tab.id);
-    const page = await chrome.tabs.sendMessage(tab.id, { type: "SCAN_SOURCE" });
-    if (page.loginRequired) throw new Error("需要重新登录");
-    return { courseId: course.id, ok: true, items: extractCandidates(page.text, course, week) };
-  } catch (error) {
-    return {
+  const page = await readPage(course.url);
+  if (page.ok) return { courseId: course.id, ok: true, items: extractCandidates(page.text, course, week) };
+  return {
+    courseId: course.id,
+    ok: false,
+    error: page.error,
+    items: (course.sessions || []).map((session) => ({
+      id: `${course.id}:${session.id}:w${week}`,
       courseId: course.id,
-      ok: false,
-      error: error.message,
-      items: (course.sessions || []).map((session) => ({
-        id: `${course.id}:${session.id}:w${week}`,
-        courseId: course.id,
-        course: course.name,
-        sessionId: session.id,
-        session: session.label,
-        day: session.day,
-        time: session.time,
-        week,
-        code: "",
-        confidence: "missing",
-        context: "",
-        sourceUrl: course.url
-      }))
-    };
-  } finally {
-    if (tab.id) await chrome.tabs.remove(tab.id).catch(() => {});
-  }
+      course: course.name,
+      sessionId: session.id,
+      session: session.label,
+      day: session.day,
+      time: session.time,
+      week,
+      code: "",
+      confidence: "missing",
+      context: "",
+      sourceUrl: course.url
+    }))
+  };
 }
 
 async function scanAll(reason = "manual") {
@@ -212,7 +229,7 @@ async function scanAll(reason = "manual") {
 
   if (settings.autoDiscover !== false) {
     const discovered = await discoverAttendance(settings);
-    const sourceScans = await automaticSourceScans(discovered.items);
+    const sourceScans = await automaticSourceScans(discovered.items, settings);
     // Match against each source page separately rather than one concatenated blob: joining
     // texts together let a code found near the end of one page's content "see" course names
     // from the start of the next page as nearby context, producing confident-looking matches
@@ -229,7 +246,10 @@ async function scanAll(reason = "manual") {
         return item;
       });
     }
-    const result = { reason, mode: "attendance-discovery", week: null, scannedAt: new Date().toISOString(), items, scans: sourceScans, discoveryErrors: discovered.errors };
+    // Keep only a summary of each scan: full page text for a dozen pages would blow past
+    // chrome.storage.local's quota and make the whole save fail silently.
+    const scans = sourceScans.map(({ ok, url, error, text }) => ({ ok, url, error, textLength: (text || "").length }));
+    const result = { reason, mode: "attendance-discovery", week: null, scannedAt: new Date().toISOString(), items, scans, discoveryErrors: discovered.errors };
     await chrome.storage.local.set({ latestScan: result });
     const found = items.filter((item) => item.code).length;
     await chrome.notifications.create("attendance-scan", {

@@ -65,6 +65,81 @@ export function normalise(value) {
   return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+const MONTH_NAMES_RE = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec";
+
+// Moodle unit pages print the Week 1 date range in their own header
+// ("Week 1 ... Mon 27 July 26 - Sun 2 Aug 26"), which is enough to work out the
+// current teaching week without asking the student to type it in.
+export function detectWeekOneMonday(text) {
+  const re = new RegExp(`\\bweek\\s*1\\b[\\s\\S]{0,400}?\\b(\\d{1,2})\\s+(${MONTH_NAMES_RE})[a-z]*\\.?,?\\s+(\\d{4}|\\d{2})\\b`, "i");
+  const match = re.exec(String(text || ""));
+  if (!match) return "";
+  const month = MONTH_ABBR.findIndex((name) => name.toLowerCase() === match[2].toLowerCase());
+  const year = match[3].length === 2 ? 2000 + Number(match[3]) : Number(match[3]);
+  const date = new Date(year, month, Number(match[1]), 12);
+  if (Number.isNaN(date.getTime())) return "";
+  return dateInfo(mondayOf(date)).iso;
+}
+
+function stripHash(href) {
+  return String(href || "").split("#")[0];
+}
+
+export function findCourseLinks(links, courseCodes, { hrefPattern, normaliseHref = (href) => href }) {
+  const codes = (courseCodes || []).map((code) => String(code).toLowerCase());
+  const seen = new Map();
+  for (const link of links || []) {
+    const raw = stripHash(link.href);
+    if (!hrefPattern.test(raw)) continue;
+    const haystack = `${link.label} ${raw}`.toLowerCase();
+    const courses = codes.filter((code) => haystack.includes(code));
+    if (!courses.length) continue;
+    const href = normaliseHref(raw);
+    if (!seen.has(href)) seen.set(href, courses);
+  }
+  return [...seen.entries()].map(([href, courses]) => ({ href, courses }));
+}
+
+// Ed only shows thread titles in the discussion list; the code table lives inside
+// the thread body, so pick the threads worth opening by title.
+export function edThreadLinks(links) {
+  const seen = new Map();
+  for (const link of links || []) {
+    const href = stripHash(link.href);
+    if (!/\/discussion\/\d+/.test(href)) continue;
+    const label = String(link.label || "");
+    const priority = /attendance/i.test(label) ? 0 : /\bcodes?\b/i.test(label) ? 1 : /\bweek\s*\d+/i.test(label) ? 2 : -1;
+    if (priority < 0) continue;
+    if (!seen.has(href) || seen.get(href) > priority) seen.set(href, priority);
+  }
+  return [...seen.entries()].sort((a, b) => a[1] - b[1]).map(([href]) => href).slice(0, 5);
+}
+
+// Moodle unit pages link each teaching week to its own section page; codes are
+// posted inside the week's section, not on the unit home page.
+export function moodleWeekLinks(links) {
+  const byWeek = new Map();
+  for (const link of links || []) {
+    const match = /\bweek\s*(\d{1,2})\b/i.exec(link.label || "");
+    if (!match) continue;
+    const href = stripHash(link.href);
+    if (!/section/i.test(href)) continue;
+    const week = Number(match[1]);
+    if (!byWeek.has(week)) byWeek.set(week, href);
+  }
+  return byWeek;
+}
+
+export function pickWeekNumbers(available, targetWeeks) {
+  const weeks = [...available].sort((a, b) => b - a);
+  const targets = (targetWeeks || []).filter(Number.isFinite);
+  if (targets.length) {
+    const wanted = weeks.filter((week) => targets.some((target) => Math.abs(week - target) <= 1));
+    if (wanted.length) return wanted;
+  }
+  return weeks.slice(0, 14);
+}
+
 export function extractCandidates(text, course, week) {
   const clean = text.replace(/\u00a0/g, " ").replace(/[\t ]+/g, " ");
   const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
@@ -120,6 +195,7 @@ export function extractCandidates(text, course, week) {
 
 const SESSION_TYPE_RE = /\b(workshop|tutorial|studio|applied class|practical|laboratory|lab|seminar)\b/i;
 const TIME_TOKEN_RE = /\b(\d{1,2}):(\d{2})\s*([ap])\.?m\.?\b/gi;
+const ANY_DATE_RE = new RegExp(`\\b\\d{1,2}\\s+(?:${MONTH_NAMES_RE})[a-z]*\\b|\\b(?:${MONTH_NAMES_RE})[a-z]*\\s+\\d{1,2}\\b`, "i");
 
 export function normaliseTimeToken(value) {
   TIME_TOKEN_RE.lastIndex = 0;
@@ -152,7 +228,7 @@ export function matchCodesToAttendance(text, attendanceItems) {
     }
   });
 
-  return attendanceItems.map((item) => {
+  const candidates = attendanceItems.map((item) => {
     const course = normalise(item.course);
     const sessionAliases = [item.session, ...(item.aliases || [])].map(normalise).filter(Boolean);
     const dateTokens = [item.attendanceDate?.iso, item.attendanceDate?.key?.replaceAll("_", " ")].map(normalise).filter(Boolean);
@@ -165,6 +241,18 @@ export function matchCodesToAttendance(text, attendanceItems) {
     const sessionType = SESSION_TYPE_RE.exec(item.session || "")?.[1]?.toLowerCase();
     const itemTime = normaliseTimeToken(item.time);
     const typeRe = sessionType ? new RegExp(`\\b${sessionType}\\b`, "i") : null;
+    // "9_Sep_26" -> matches "9 Sep" / "9 September" / "Sep 9" on the same line. A line that
+    // carries some other date is an old or future week's posting for the same slot and must
+    // lose to the right week, even though its type and time look identical.
+    const dateParts = String(item.attendanceDate?.key || "").split("_");
+    const lineDateRe = dateParts.length === 3
+      ? new RegExp(`\\b${Number(dateParts[0])}\\s+${dateParts[1]}[a-z]*\\b|\\b${dateParts[1]}[a-z]*\\s+${Number(dateParts[0])}\\b`, "i")
+      : null;
+    // "Workshop 02" -> the standalone number 02/2, but never the hour of a time or the day of a date.
+    const sessionNumber = /\b(\d{1,2})\b/.exec(item.session || "")?.[1];
+    const numberRe = sessionNumber
+      ? new RegExp(`\\b0*${Number(sessionNumber)}\\b(?![:\\d])(?!\\s*(?:${MONTH_NAMES_RE}))`, "i")
+      : null;
     const ranked = hits.map((hit) => {
       const context = normalise(hit.context);
       const line = normalise(hit.line);
@@ -174,25 +262,40 @@ export function matchCodesToAttendance(text, attendanceItems) {
       if (sessionAliases.some((alias) => context.includes(alias))) score += 14;
       if (sessionAliases.some((alias) => line.includes(alias))) score += 14;
       if (dateTokens.some((token) => context.includes(token))) score += 4;
-      if (typeRe?.test(hit.line) && lineHasMatchingTime(hit.line, itemTime)) score += 26;
+      if (typeRe?.test(line) && lineHasMatchingTime(line, itemTime)) score += 26;
+      if (lineDateRe) {
+        if (lineDateRe.test(line)) score += 10;
+        else if (ANY_DATE_RE.test(line)) score -= 10;
+      }
+      if (numberRe?.test(line)) score += 6;
       return { ...hit, score };
-    }).sort((a, b) => b.score - a.score);
-    const best = ranked[0];
+    });
+    return ranked.filter((hit) => hit.score >= 24);
+  });
+
+  // A real signed code belongs to exactly one class, so hand each code to the single
+  // item that wants it most. If two items want the same code equally, neither gets it:
+  // that pattern means the match came from shared surrounding text, not a real code.
+  const claims = candidates
+    .flatMap((hits, index) => hits.map((hit) => ({ index, ...hit })))
+    .sort((a, b) => b.score - a.score);
+  const assigned = new Map();
+  const usedCodes = new Set();
+  for (const claim of claims) {
+    if (assigned.has(claim.index) || usedCodes.has(claim.code)) continue;
+    const rival = claims.some((other) => other.code === claim.code && other.score === claim.score && other.index !== claim.index && !assigned.has(other.index));
+    usedCodes.add(claim.code);
+    if (!rival) assigned.set(claim.index, claim);
+  }
+
+  return attendanceItems.map((item, index) => {
+    const best = assigned.get(index);
     return {
       ...item,
-      code: best?.score >= 24 ? best.code : "",
-      confidence: best?.score >= 36 ? "high" : best?.score >= 24 ? "review" : "missing",
-      context: best?.score >= 24 ? best.context.slice(0, 520) : ""
+      code: best ? best.code : "",
+      confidence: best ? (best.score >= 36 ? "high" : "review") : "missing",
+      context: best ? best.context.slice(0, 520) : ""
     };
-  }).map((item, index, matched) => {
-    // A real signed attendance code can only be the right answer for one class. If the
-    // same candidate scored highest for more than one item, that's a sign the match rode
-    // in on shared surrounding text (e.g. two unrelated pages joined together) rather than
-    // a genuine per-session code, so treat every one of those items as unmatched instead
-    // of confidently showing a code that can't actually be correct for all of them.
-    if (!item.code) return item;
-    const duplicates = matched.filter((other) => other.code === item.code).length;
-    return duplicates > 1 ? { ...item, code: "", confidence: "missing", context: "" } : item;
   });
 }
 

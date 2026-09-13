@@ -51,38 +51,20 @@ function findSubmitButton(input) {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type === "SCAN_SOURCE") {
+  if (message.type === "READ_PAGE") {
     waitForStablePage().then(() => {
+      const links = [...document.querySelectorAll("a[href]")].map((link) => ({
+        label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
+        href: link.href
+      })).filter((item) => item.label && item.href);
       sendResponse({
         ok: true,
         title: document.title,
         url: location.href,
         text: visibleText().slice(0, 750000),
+        links,
         loginRequired: /login|sign in|log in|okta/i.test(document.title + " " + location.href)
       });
-    });
-    return true;
-  }
-
-  if (message.type === "DISCOVER_ATTENDANCE_SESSIONS") {
-    waitForStablePage().then(() => {
-      const links = [...document.querySelectorAll("a[href*='Entry.aspx']")].map((link) => ({
-        label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
-        href: link.href
-      })).filter((item) => item.label && item.href);
-      sendResponse({ ok: true, title: document.title, url: location.href, links });
-    });
-    return true;
-  }
-
-  if (message.type === "DISCOVER_COURSE_LINKS") {
-    waitForStablePage().then(() => {
-      const codes = (message.courseCodes || []).map((item) => String(item).toLowerCase());
-      const links = [...document.querySelectorAll("a[href]")].map((link) => ({
-        label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
-        href: link.href
-      })).filter((item) => codes.some((code) => `${item.label} ${item.href}`.toLowerCase().includes(code)));
-      sendResponse({ ok: true, links });
     });
     return true;
   }

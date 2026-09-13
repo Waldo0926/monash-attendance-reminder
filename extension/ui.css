@@ -39,6 +39,11 @@ button:disabled { opacity:.45; cursor:not-allowed; }
 .confirm input { width:18px; height:18px; }
 .danger-note { color:#9c2f24; font-weight:650; }
 .muted { color:var(--muted); font-size:13px; }
+#scanList { margin:10px 0 0; padding-left:18px; font-size:13px; }
+#scanList li { margin:4px 0; word-break:break-all; }
+#scanList a { color:inherit; }
+.scan-ok { color:#2f6f3e; }
+.scan-failed { color:#9c2f24; }
 .actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
 .empty { text-align:center; padding:30px 12px; }
 #status { min-height:24px; font-weight:650; }

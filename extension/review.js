@@ -19,6 +19,14 @@ async function render() {
       ${item.context ? `<div class="context">${escapeHtml(item.context)}</div>` : `<p class="muted">来源页面没有匹配到这个班次，请手动打开来源检查。</p>`}
       <a href="${escapeHtml(item.sourceUrl)}" target="_blank">打开来源 ↗</a>
     </article>`).join("");
+
+  const scans = latestScan.scans || [];
+  const scanLog = document.querySelector("#scanLog");
+  scanLog.hidden = !scans.length && !(latestScan.discoveryErrors || []).length;
+  document.querySelector("#scanList").innerHTML = [
+    ...(latestScan.discoveryErrors || []).map((error) => `<li class="scan-failed">Attendance：${escapeHtml(error)}</li>`),
+    ...scans.map((scan) => `<li class="${scan.ok ? "scan-ok" : "scan-failed"}">${scan.ok ? "✓" : "✗"} <a href="${escapeHtml(scan.url)}" target="_blank">${escapeHtml(scan.url)}</a>${scan.ok ? ` · ${scan.textLength ?? 0} 字` : ` · ${escapeHtml(scan.error || "失败")}`}</li>`)
+  ].join("");
 }
 
 function updateSubmit() {

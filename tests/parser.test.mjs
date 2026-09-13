@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, hasUsableConfig, matchCodesToAttendance, normaliseTimeToken, parseDateKey, recentAttendanceDates, teachingWeek } from "../extension/shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, matchCodesToAttendance, moodleWeekLinks, normaliseTimeToken, parseDateKey, pickWeekNumbers, recentAttendanceDates, teachingWeek } from "../extension/shared.js";
 
 test("ships with a blank per-user course configuration", () => {
   assert.deepEqual(DEFAULT_SETTINGS.courses, []);
@@ -77,6 +77,79 @@ test("matches the real Monash 'Type Date Number Time Code' announcement layout b
   const [workshop02, tutorial05] = matchCodesToAttendance(text, items);
   assert.equal(workshop02.code, "SQP3R");
   assert.equal(tutorial05.code, "ZS9CR");
+});
+
+test("prefers this week's row over an older week with the same slot, and rejects the old one alone", () => {
+  // FIT3162's Moodle page keeps every week's codes; Studio 01 is Thursday 5:00PM every week.
+  const item = { course: "FIT3162", session: "Studio 01", time: "5:00 pm", attendanceDate: { iso: "2026-09-10", key: "10_Sep_26" } };
+  const both = "Studio Thursday, 27 Aug 01 5:00PM 7KZY2\nStudio Thursday, 10 Sep 01 5:00PM NEW7K";
+  assert.equal(matchCodesToAttendance(both, [item])[0].code, "NEW7K");
+  const oldOnly = "Studio Thursday, 27 Aug 01 5:00PM 7KZY2";
+  assert.equal(matchCodesToAttendance(oldOnly, [item])[0].code, "");
+});
+
+test("uses the session number to split two sessions sharing a date and time", () => {
+  const text = "Workshop Wednesday, 9 Sep 02 4:00PM SQP3R\nWorkshop Wednesday, 9 Sep 03_OnlineRealTime 4:00PM QQKZQ";
+  const items = [
+    { course: "FIT2109", session: "Workshop 02", time: "4:00 pm", attendanceDate: { iso: "2026-09-09", key: "9_Sep_26" } },
+    { course: "FIT2109", session: "Workshop 03", time: "4:00 pm", attendanceDate: { iso: "2026-09-09", key: "9_Sep_26" } }
+  ];
+  const [w02, w03] = matchCodesToAttendance(text, items);
+  assert.equal(w02.code, "SQP3R");
+  // "03_OnlineRealTime" has no word boundary after the 3, so Workshop 03 can't claim it by
+  // number; the two rows tie and the duplicate guard has to refuse rather than guess.
+  assert.notEqual(w03.code, "SQP3R");
+});
+
+test("reads the Week 1 Monday off a Moodle unit page", () => {
+  const text = "Unit dashboard\nWeek 1\nIntroduction to Unit and transitioning from FIT3161-63\nMon 27 July 26 - Sun 2 Aug 26\nLearning Outcomes";
+  assert.equal(detectWeekOneMonday(text), "2026-07-27");
+  assert.equal(detectWeekOneMonday("Week 10 Consultation with Supervisor"), "");
+});
+
+test("finds unit links by course code and normalises them to the page worth opening", () => {
+  const links = [
+    { label: "FIT2109 S2 2026 Malaysia", href: "https://edstem.org/au/courses/39026/lessons" },
+    { label: "FIT2109 S2 2026 Malaysia", href: "https://edstem.org/au/courses/39026/discussion" },
+    { label: "Some other unit", href: "https://edstem.org/au/courses/11111/discussion" },
+    { label: "FIT3162/FIT3164 MUM S2 2026", href: "https://learning.monash.edu/course/view.php?id=44555#section-0" }
+  ];
+  const ed = findCourseLinks(links, ["FIT2109", "FIT3162"], {
+    hrefPattern: /\/courses\/\d+/,
+    normaliseHref: (href) => href.replace(/(\/courses\/\d+).*$/, "$1/discussion")
+  });
+  assert.deepEqual(ed, [{ href: "https://edstem.org/au/courses/39026/discussion", courses: ["fit2109"] }]);
+  const moodle = findCourseLinks(links, ["FIT2109", "FIT3162"], { hrefPattern: /\/course\/view\.php\?id=\d+/ });
+  assert.deepEqual(moodle, [{ href: "https://learning.monash.edu/course/view.php?id=44555", courses: ["fit3162"] }]);
+});
+
+test("picks Ed threads worth opening by title, attendance first", () => {
+  const links = [
+    { label: "Mock Test is now released! General Abdul Rafae STAFF", href: "https://edstem.org/au/courses/39026/discussion/3573001" },
+    { label: "Week 7 General Adrian Kristanto STAFF", href: "https://edstem.org/au/courses/36340/discussion/3573002" },
+    { label: "Announcement 2 of 2 - Attendance code (International Students Only) - Week 7", href: "https://edstem.org/au/courses/39026/discussion/3573676" },
+    { label: "FIT2109 S2 2026 Malaysia", href: "https://edstem.org/au/courses/39026/discussion" }
+  ];
+  assert.deepEqual(edThreadLinks(links), [
+    "https://edstem.org/au/courses/39026/discussion/3573676",
+    "https://edstem.org/au/courses/36340/discussion/3573002"
+  ]);
+});
+
+test("maps Moodle week links to section pages and narrows them to the current week", () => {
+  const links = [
+    { label: "Week 1 - Introduction to Unit", href: "https://learning.monash.edu/course/view.php?id=44555#section-12" },
+    { label: "Week 5 Consultation with Supervisor", href: "https://learning.monash.edu/course/view.php?id=44555&section=24" },
+    { label: "Week 6 Presentation Sessions", href: "https://learning.monash.edu/course/section.php?id=901" },
+    { label: "Week 7 Presentation sessions", href: "https://learning.monash.edu/course/view.php?id=44555&section=30" },
+    { label: "Week 8 Consultation with Supervisor", href: "https://learning.monash.edu/course/view.php?id=44555&section=33" },
+    { label: "Week 12", href: "https://learning.monash.edu/course/view.php?id=44555&section=45" }
+  ];
+  const weeks = moodleWeekLinks(links);
+  assert.equal(weeks.has(1), false);
+  assert.equal(weeks.get(7), "https://learning.monash.edu/course/view.php?id=44555&section=30");
+  assert.deepEqual(pickWeekNumbers(weeks.keys(), [7]), [8, 7, 6]);
+  assert.deepEqual(pickWeekNumbers(weeks.keys(), []), [12, 8, 7, 6, 5]);
 });
 
 test("calculates Week 1 and Week 7 from the configured Monday", () => {
