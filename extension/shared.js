@@ -118,6 +118,24 @@ export function extractCandidates(text, course, week) {
   });
 }
 
+const SESSION_TYPE_RE = /\b(workshop|tutorial|studio|applied class|practical|laboratory|lab|seminar)\b/i;
+const TIME_TOKEN_RE = /\b(\d{1,2}):(\d{2})\s*([ap])\.?m\.?\b/gi;
+
+export function normaliseTimeToken(value) {
+  TIME_TOKEN_RE.lastIndex = 0;
+  const match = TIME_TOKEN_RE.exec(String(value || ""));
+  if (!match) return null;
+  let hour = Number(match[1]) % 12;
+  if (match[3].toLowerCase() === "p") hour += 12;
+  return `${String(hour).padStart(2, "0")}:${match[2]}`;
+}
+
+function lineHasMatchingTime(line, targetTime) {
+  if (!targetTime) return false;
+  const tokens = String(line || "").match(TIME_TOKEN_RE) || [];
+  return tokens.some((token) => normaliseTimeToken(token) === targetTime);
+}
+
 export function matchCodesToAttendance(text, attendanceItems) {
   const clean = String(text || "").replace(/\u00a0/g, " ").replace(/[\t ]+/g, " ");
   const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
@@ -138,6 +156,15 @@ export function matchCodesToAttendance(text, attendanceItems) {
     const course = normalise(item.course);
     const sessionAliases = [item.session, ...(item.aliases || [])].map(normalise).filter(Boolean);
     const dateTokens = [item.attendanceDate?.iso, item.attendanceDate?.key?.replaceAll("_", " ")].map(normalise).filter(Boolean);
+    // Real Monash attendance-code postings list one session per line as
+    // "<Type> <Date> <Number> <Time> <Code>", with the date sitting between the type
+    // word and the session number. That means "Workshop 02" never appears as one
+    // contiguous phrase, so a substring check against the session label alone misses
+    // every real posting. The type word plus the exact time Attendance itself reported
+    // for this session is a far more reliable, position-independent signal.
+    const sessionType = SESSION_TYPE_RE.exec(item.session || "")?.[1]?.toLowerCase();
+    const itemTime = normaliseTimeToken(item.time);
+    const typeRe = sessionType ? new RegExp(`\\b${sessionType}\\b`, "i") : null;
     const ranked = hits.map((hit) => {
       const context = normalise(hit.context);
       const line = normalise(hit.line);
@@ -147,6 +174,7 @@ export function matchCodesToAttendance(text, attendanceItems) {
       if (sessionAliases.some((alias) => context.includes(alias))) score += 14;
       if (sessionAliases.some((alias) => line.includes(alias))) score += 14;
       if (dateTokens.some((token) => context.includes(token))) score += 4;
+      if (typeRe?.test(hit.line) && lineHasMatchingTime(hit.line, itemTime)) score += 26;
       return { ...hit, score };
     }).sort((a, b) => b.score - a.score);
     const best = ranked[0];

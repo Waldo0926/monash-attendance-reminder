@@ -87,6 +87,7 @@ async function discoverAttendance(settings) {
         const linkDate = parseDateKey(new URL(link.href).searchParams.get("d"));
         if (!linkDate || !isoWindow.has(linkDate.iso)) continue;
         const label = sessionName(link.label, course);
+        const time = link.label.match(/\b\d{1,2}:\d{2}\s?[ap]m\b/i)?.[0] || "";
         items.push({
           id: `attendance:${linkDate.iso}:${link.href}`,
           courseId: course.toLowerCase(),
@@ -95,7 +96,7 @@ async function discoverAttendance(settings) {
           session: label,
           attendanceLabel: link.label,
           day: new Date(`${linkDate.iso}T12:00:00`).toLocaleDateString("en-US", { weekday: "long" }),
-          time: "",
+          time,
           week: null,
           code: "",
           confidence: "missing",
@@ -114,11 +115,12 @@ async function discoverAttendance(settings) {
   return { items: [...new Map(items.map((item) => [item.id, item])).values()], errors };
 }
 
-async function scanTextUrl(url, waitMs = 1800) {
+async function scanTextUrl(url) {
   const tab = await chrome.tabs.create({ url, active: false });
   try {
     await waitForLoaded(tab.id);
-    await pause(waitMs);
+    // No extra fixed sleep here: content.js's own SCAN_SOURCE handler already waits for
+    // the page's rendered text to stop changing before it responds.
     const page = await chrome.tabs.sendMessage(tab.id, { type: "SCAN_SOURCE" });
     if (page.loginRequired) throw new Error("需要重新登录");
     return { ok: true, url, text: page.text || "" };
@@ -133,7 +135,6 @@ async function discoverCourseUrls(dashboardUrl, courseCodes) {
   const tab = await chrome.tabs.create({ url: dashboardUrl, active: false });
   try {
     await waitForLoaded(tab.id);
-    await pause(1800);
     const page = await chrome.tabs.sendMessage(tab.id, { type: "DISCOVER_COURSE_LINKS", courseCodes });
     return [...new Set((page.links || []).map((item) => item.href))].slice(0, 20);
   } catch {
@@ -158,7 +159,7 @@ async function automaticSourceScans(items) {
   urls.push(...await discoverCourseUrls("https://learning.monash.edu/my/courses.php", codes));
   urls.push(...await discoverCourseUrls("https://edstem.org/au/dashboard", codes));
   const scans = [];
-  for (const url of [...new Set(urls)]) scans.push(await scanTextUrl(url, url.includes("mail.google.com") ? 4500 : 1800));
+  for (const url of [...new Set(urls)]) scans.push(await scanTextUrl(url));
   return scans;
 }
 

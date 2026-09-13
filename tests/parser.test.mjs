@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, hasUsableConfig, matchCodesToAttendance, parseDateKey, recentAttendanceDates, teachingWeek } from "../extension/shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, hasUsableConfig, matchCodesToAttendance, normaliseTimeToken, parseDateKey, recentAttendanceDates, teachingWeek } from "../extension/shared.js";
 
 test("ships with a blank per-user course configuration", () => {
   assert.deepEqual(DEFAULT_SETTINGS.courses, []);
@@ -49,6 +49,34 @@ test("keeps a code that only matches a single class", () => {
   const [first, second] = matchCodesToAttendance(text, items);
   assert.equal(first.code, "ABC1D");
   assert.equal(second.code, "XY9ZQ");
+});
+
+test("normalises 12-hour time tokens regardless of spacing or case", () => {
+  assert.equal(normaliseTimeToken("4:00 pm"), "16:00");
+  assert.equal(normaliseTimeToken("4:00PM"), "16:00");
+  assert.equal(normaliseTimeToken("4:00 p.m."), "16:00");
+  assert.equal(normaliseTimeToken("12:00 am"), "00:00");
+  assert.equal(normaliseTimeToken("not a time"), null);
+});
+
+test("matches the real Monash 'Type Date Number Time Code' announcement layout by time, not a contiguous label", () => {
+  // Taken from a real Ed announcement: the session number sits between the date and the
+  // time, so "Workshop 02" never appears together as one phrase anywhere in the posting.
+  const text = [
+    "Workshops:",
+    "Workshop Monday, 7 Sep 01 6:00PM TREW9",
+    "Workshop Wednesday, 9 Sep 02 4:00PM SQP3R",
+    "Tutorials:",
+    "Tutorial Thursday, 10 Sep 01 10:00AM 8BPYR",
+    "Tutorial Friday, 11 Sep 05 2:00PM ZS9CR"
+  ].join("\n");
+  const items = [
+    { course: "FIT2109", session: "Workshop 02", time: "4:00 pm" },
+    { course: "FIT2109", session: "Tutorial 05", time: "2:00 pm" }
+  ];
+  const [workshop02, tutorial05] = matchCodesToAttendance(text, items);
+  assert.equal(workshop02.code, "SQP3R");
+  assert.equal(tutorial05.code, "ZS9CR");
 });
 
 test("calculates Week 1 and Week 7 from the configured Monday", () => {

@@ -4,6 +4,31 @@ function visibleText() {
   return clone.innerText || clone.textContent || "";
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Ed, Moodle and Attendance are all client-rendered apps: "tab finished loading" fires
+// long before the page's own JS has fetched and rendered its actual content. Rather than
+// betting on one fixed sleep that's either too short for a slow render or wastefully long
+// for a fast one, poll the page's text length until it stops changing (or give up after
+// maxMs) before reading anything out of the DOM.
+async function waitForStablePage(maxMs = 8000, stableMs = 700, intervalMs = 200) {
+  let last = null;
+  let stableSince = Date.now();
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    const current = document.body.innerText.length;
+    if (current === last) {
+      if (Date.now() - stableSince >= stableMs) return;
+    } else {
+      last = current;
+      stableSince = Date.now();
+    }
+    await sleep(intervalMs);
+  }
+}
+
 function setNativeValue(input, value) {
   const descriptor = Object.getOwnPropertyDescriptor(input.constructor.prototype, "value");
   descriptor?.set?.call(input, value);
@@ -27,47 +52,55 @@ function findSubmitButton(input) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "SCAN_SOURCE") {
-    sendResponse({
-      ok: true,
-      title: document.title,
-      url: location.href,
-      text: visibleText().slice(0, 750000),
-      loginRequired: /login|sign in|log in|okta/i.test(document.title + " " + location.href)
+    waitForStablePage().then(() => {
+      sendResponse({
+        ok: true,
+        title: document.title,
+        url: location.href,
+        text: visibleText().slice(0, 750000),
+        loginRequired: /login|sign in|log in|okta/i.test(document.title + " " + location.href)
+      });
     });
-    return;
+    return true;
   }
 
   if (message.type === "DISCOVER_ATTENDANCE_SESSIONS") {
-    const links = [...document.querySelectorAll("a[href*='Entry.aspx']")].map((link) => ({
-      label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
-      href: link.href
-    })).filter((item) => item.label && item.href);
-    sendResponse({ ok: true, title: document.title, url: location.href, links });
-    return;
+    waitForStablePage().then(() => {
+      const links = [...document.querySelectorAll("a[href*='Entry.aspx']")].map((link) => ({
+        label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
+        href: link.href
+      })).filter((item) => item.label && item.href);
+      sendResponse({ ok: true, title: document.title, url: location.href, links });
+    });
+    return true;
   }
 
   if (message.type === "DISCOVER_COURSE_LINKS") {
-    const codes = (message.courseCodes || []).map((item) => String(item).toLowerCase());
-    const links = [...document.querySelectorAll("a[href]")].map((link) => ({
-      label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
-      href: link.href
-    })).filter((item) => codes.some((code) => `${item.label} ${item.href}`.toLowerCase().includes(code)));
-    sendResponse({ ok: true, links });
-    return;
+    waitForStablePage().then(() => {
+      const codes = (message.courseCodes || []).map((item) => String(item).toLowerCase());
+      const links = [...document.querySelectorAll("a[href]")].map((link) => ({
+        label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
+        href: link.href
+      })).filter((item) => codes.some((code) => `${item.label} ${item.href}`.toLowerCase().includes(code)));
+      sendResponse({ ok: true, links });
+    });
+    return true;
   }
 
   if (message.type === "FIND_ATTENDANCE_SESSION") {
-    const targetCourse = String(message.course || "").toLowerCase();
-    const targetSession = String(message.attendanceLabel || message.session || "").toLowerCase().replace(/\b0+(\d+)\b/g, "$1");
-    const links = [...document.querySelectorAll("a[href*='Entry.aspx']")];
-    const match = links.find((link) => {
-      const text = (link.innerText || link.textContent || "").toLowerCase().replace(/\b0+(\d+)\b/g, "$1");
-      return text.includes(targetCourse) && text.includes(targetSession);
+    waitForStablePage().then(() => {
+      const targetCourse = String(message.course || "").toLowerCase();
+      const targetSession = String(message.attendanceLabel || message.session || "").toLowerCase().replace(/\b0+(\d+)\b/g, "$1");
+      const links = [...document.querySelectorAll("a[href*='Entry.aspx']")];
+      const match = links.find((link) => {
+        const text = (link.innerText || link.textContent || "").toLowerCase().replace(/\b0+(\d+)\b/g, "$1");
+        return text.includes(targetCourse) && text.includes(targetSession);
+      });
+      sendResponse(match
+        ? { ok: true, href: match.href, label: match.innerText || match.textContent }
+        : { ok: false, error: `找不到 ${message.course} ${message.session} 的 Attendance 班次` });
     });
-    sendResponse(match
-      ? { ok: true, href: match.href, label: match.innerText || match.textContent }
-      : { ok: false, error: `找不到 ${message.course} ${message.session} 的 Attendance 班次` });
-    return;
+    return true;
   }
 
   if (message.type === "FILL_ATTENDANCE_CODE") {
