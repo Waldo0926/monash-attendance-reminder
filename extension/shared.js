@@ -156,6 +156,15 @@ export function matchCodesToAttendance(text, attendanceItems) {
       confidence: best?.score >= 36 ? "high" : best?.score >= 24 ? "review" : "missing",
       context: best?.score >= 24 ? best.context.slice(0, 520) : ""
     };
+  }).map((item, index, matched) => {
+    // A real signed attendance code can only be the right answer for one class. If the
+    // same candidate scored highest for more than one item, that's a sign the match rode
+    // in on shared surrounding text (e.g. two unrelated pages joined together) rather than
+    // a genuine per-session code, so treat every one of those items as unmatched instead
+    // of confidently showing a code that can't actually be correct for all of them.
+    if (!item.code) return item;
+    const duplicates = matched.filter((other) => other.code === item.code).length;
+    return duplicates > 1 ? { ...item, code: "", confidence: "missing", context: "" } : item;
   });
 }
 

@@ -21,6 +21,36 @@ test("matches a Gmail code to a class discovered from Attendance", () => {
   assert.equal(result.code, "S7M3X");
 });
 
+test("rejects a candidate that would apply identically to two unrelated classes", () => {
+  const items = [
+    { course: "FIT2102", session: "Workshop 01" },
+    { course: "FIT2109", session: "Tutorial 05" }
+  ];
+  // "1CRLF" sits close enough to both course mentions to score for either one, which is
+  // exactly the shape of a false positive picked up from an unrelated page (an ID, a build
+  // number, anything 5 characters long) rather than a real per-session signed code.
+  const text = "FIT2102 Workshop 01\n1CRLF\nFIT2109 Tutorial 05";
+  const [first, second] = matchCodesToAttendance(text, items);
+  assert.equal(first.code, "");
+  assert.equal(first.confidence, "missing");
+  assert.equal(second.code, "");
+  assert.equal(second.confidence, "missing");
+});
+
+test("keeps a code that only matches a single class", () => {
+  const items = [
+    { course: "FIT2102", session: "Workshop 01" },
+    { course: "FIT2109", session: "Tutorial 05" }
+  ];
+  // Non-blank filler lines, since blank lines get filtered out before the context
+  // window is measured and so can't actually separate two matches on their own.
+  const filler = Array.from({ length: 8 }, (_, i) => `unrelated line ${i}`).join("\n");
+  const text = `FIT2102 Workshop 01 Tuesday ABC1D\n${filler}\nFIT2109 Tutorial 05 Friday XY9ZQ`;
+  const [first, second] = matchCodesToAttendance(text, items);
+  assert.equal(first.code, "ABC1D");
+  assert.equal(second.code, "XY9ZQ");
+});
+
 test("calculates Week 1 and Week 7 from the configured Monday", () => {
   const settings = { weekOneMonday: "2026-07-27" };
   assert.equal(teachingWeek(settings, new Date("2026-07-27T12:00:00+08:00")), 1);

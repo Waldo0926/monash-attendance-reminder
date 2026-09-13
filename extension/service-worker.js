@@ -56,6 +56,10 @@ async function waitForLoaded(tabId, timeoutMs = 25000) {
   });
 }
 
+function confidenceRank(confidence) {
+  return confidence === "high" ? 2 : confidence === "review" ? 1 : 0;
+}
+
 function sessionName(label, course) {
   const withoutCourse = String(label || "").replace(new RegExp(course, "ig"), " ").replace(/\s+/g, " ").trim();
   const match = withoutCourse.match(/(workshop|tutorial|studio|applied class|practical|laboratory|lab|seminar)[^|·,;]*/i);
@@ -208,11 +212,22 @@ async function scanAll(reason = "manual") {
   if (settings.autoDiscover !== false) {
     const discovered = await discoverAttendance(settings);
     const sourceScans = await automaticSourceScans(discovered.items);
-    const combinedText = sourceScans.filter((scan) => scan.ok).map((scan) => scan.text).join("\n");
-    const items = matchCodesToAttendance(combinedText, discovered.items).map((item) => ({
-      ...item,
-      sourceUrl: sourceScans.find((scan) => scan.ok && item.code && scan.text.includes(item.code))?.url || item.sourceUrl
-    }));
+    // Match against each source page separately rather than one concatenated blob: joining
+    // texts together let a code found near the end of one page's content "see" course names
+    // from the start of the next page as nearby context, producing confident-looking matches
+    // that were really just two unrelated pages bleeding into each other.
+    let items = discovered.items;
+    for (const scan of sourceScans) {
+      if (!scan.ok) continue;
+      const matched = matchCodesToAttendance(scan.text, items);
+      items = items.map((item, index) => {
+        const candidate = matched[index];
+        if (candidate.code && confidenceRank(candidate.confidence) > confidenceRank(item.confidence)) {
+          return { ...item, code: candidate.code, confidence: candidate.confidence, context: candidate.context, sourceUrl: scan.url };
+        }
+        return item;
+      });
+    }
     const result = { reason, mode: "attendance-discovery", week: null, scannedAt: new Date().toISOString(), items, scans: sourceScans, discoveryErrors: discovered.errors };
     await chrome.storage.local.set({ latestScan: result });
     const found = items.filter((item) => item.code).length;
