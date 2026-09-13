@@ -1,4 +1,4 @@
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, loadSettings, matchCodesToAttendance, recentAttendanceDates, teachingWeek } from "./shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, loadSettings, matchCodesToAttendance, parseDateKey, recentAttendanceDates, teachingWeek } from "./shared.js";
 
 const PRIMARY_ALARM = "attendance-primary";
 const BACKUP_ALARM = "attendance-backup";
@@ -80,6 +80,7 @@ function sessionName(label, course) {
 
 async function discoverAttendance(settings) {
   const dates = recentAttendanceDates(new Date(), Number(settings.lookbackDays) || 7);
+  const isoWindow = new Set(dates.map((date) => date.iso));
   const items = [];
   const errors = [];
   for (const date of dates) {
@@ -92,22 +93,28 @@ async function discoverAttendance(settings) {
       for (const link of page.links || []) {
         const course = link.label.match(/\b[A-Z]{3}\d{4}\b/i)?.[0]?.toUpperCase();
         if (!course) continue;
+        // Units.aspx preloads several days of sessions into the DOM at once and only
+        // expands the one matching the hash, so the real date lives in the link's own
+        // "d=" query param, not in whichever date this tab happened to be opened for.
+        const linkDate = parseDateKey(new URL(link.href).searchParams.get("d"));
+        if (!linkDate || !isoWindow.has(linkDate.iso)) continue;
         const label = sessionName(link.label, course);
         items.push({
-          id: `attendance:${date.iso}:${link.href}`,
+          id: `attendance:${linkDate.iso}:${link.href}`,
           courseId: course.toLowerCase(),
           course,
           sessionId: label.toLowerCase().replace(/\W+/g, "-"),
           session: label,
           attendanceLabel: link.label,
-          day: new Date(`${date.iso}T12:00:00`).toLocaleDateString("en-US", { weekday: "long" }),
+          day: new Date(`${linkDate.iso}T12:00:00`).toLocaleDateString("en-US", { weekday: "long" }),
           time: "",
           week: null,
           code: "",
           confidence: "missing",
           context: "",
-          sourceUrl: url.href,
-          attendanceDate: date
+          entryUrl: link.href,
+          sourceUrl: link.href,
+          attendanceDate: linkDate
         });
       }
     } catch (error) {
@@ -265,6 +272,17 @@ async function scanAll(reason = "manual") {
 }
 
 async function submitOne(item, settings) {
+  if (item.entryUrl) {
+    const tab = await chrome.tabs.create({ url: item.entryUrl, active: true });
+    await waitForLoaded(tab.id);
+    const outcome = await chrome.tabs.sendMessage(tab.id, {
+      type: "FILL_ATTENDANCE_CODE",
+      code: item.code,
+      commit: true
+    });
+    return { ...outcome, tabId: tab.id };
+  }
+
   const date = item.attendanceDate || attendanceDate(settings, item.week, item.day);
   if (!date) return { ok: false, error: "无法计算签到日期，请检查 Week 1 和班次星期设置。" };
   const unitsUrl = new URL("Units.aspx", ATTENDANCE_URL);

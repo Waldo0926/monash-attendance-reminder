@@ -2,7 +2,12 @@ import { DEFAULT_SETTINGS, loadSettings } from "./shared.js";
 
 let settings;
 const coursesRoot = document.querySelector("#courses");
+const manualSection = document.querySelector("#manualSection");
 const status = document.querySelector("#status");
+
+function syncManualSectionVisibility() {
+  manualSection.hidden = document.querySelector("#autoDiscover").checked;
+}
 const CLASS_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function escapeHtml(value = "") {
@@ -208,7 +213,10 @@ async function init() {
   document.querySelector("#backupDay").value = settings.backup.weekday;
   document.querySelector("#backupTime").value = timeValue(settings.backup);
   renderCourses();
+  syncManualSectionVisibility();
 }
+
+document.querySelector("#autoDiscover").addEventListener("change", syncManualSectionVisibility);
 
 document.querySelector("#addCourse").addEventListener("click", () => {
   collectCoursesFromDom();

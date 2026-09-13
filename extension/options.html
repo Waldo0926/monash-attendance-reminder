@@ -39,11 +39,13 @@
       </div>
     </section>
 
-    <div class="section-title-row">
-      <div><h2>手动课程（可选）</h2><p>仅在关闭 Attendance 自动识别时使用。</p></div>
-      <button class="secondary" id="addCourse">＋ 添加课程</button>
+    <div id="manualSection" hidden>
+      <div class="section-title-row">
+        <div><h2>手动课程（可选）</h2><p>仅在关闭 Attendance 自动识别时使用。</p></div>
+        <button class="secondary" id="addCourse">＋ 添加课程</button>
+      </div>
+      <section id="courses"></section>
     </div>
-    <section id="courses"></section>
 
     <div class="actions">
       <button class="primary" id="save">保存并启用</button>

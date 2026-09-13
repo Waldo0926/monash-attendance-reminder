@@ -10,13 +10,23 @@ export const DEFAULT_SETTINGS = {
   courses: []
 };
 
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 export function dateInfo(date) {
   const value = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return {
     iso: `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`,
-    key: `${value.getDate()}_${months[value.getMonth()]}_${String(value.getFullYear()).slice(-2)}`
+    key: `${value.getDate()}_${MONTH_ABBR[value.getMonth()]}_${String(value.getFullYear()).slice(-2)}`
   };
+}
+
+export function parseDateKey(key) {
+  const match = /^(\d{1,2})_([A-Za-z]{3})_(\d{2})$/.exec(String(key || ""));
+  if (!match) return null;
+  const [, day, mon, yy] = match;
+  const month = MONTH_ABBR.findIndex((name) => name.toLowerCase() === mon.toLowerCase());
+  if (month === -1) return null;
+  return dateInfo(new Date(2000 + Number(yy), month, Number(day), 12));
 }
 
 export function recentAttendanceDates(now = new Date(), count = 7) {

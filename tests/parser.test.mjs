@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS, attendanceDate, extractCandidates, matchCodesToAttendance, recentAttendanceDates, teachingWeek } from "../extension/shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, matchCodesToAttendance, parseDateKey, recentAttendanceDates, teachingWeek } from "../extension/shared.js";
 
 test("ships with a blank per-user course configuration", () => {
   assert.deepEqual(DEFAULT_SETTINGS.courses, []);
@@ -48,6 +48,17 @@ test("matches a code to the correct class using nearby context", () => {
   assert.equal(results[0].code, "ABC1D");
   assert.equal(results[1].code, "XY9ZQ");
   assert.equal(results[0].confidence, "high");
+});
+
+test("builds the Units page beside Default.aspx without duplicating /student/", () => {
+  assert.equal(new URL("Units.aspx", ATTENDANCE_URL).pathname, "/student/Units.aspx");
+});
+
+test("parses the real Attendance date key format seen on Entry.aspx links", () => {
+  assert.deepEqual(parseDateKey("8_Sep_26"), { iso: "2026-09-08", key: "8_Sep_26" });
+  assert.deepEqual(parseDateKey("11_Sep_26"), { iso: "2026-09-11", key: "11_Sep_26" });
+  assert.equal(parseDateKey("not-a-date"), null);
+  assert.equal(parseDateKey(""), null);
 });
 
 test("does not accept a code without a matching class label", () => {
