@@ -1,4 +1,4 @@
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, loadSettings, matchCodesToAttendance, parseDateKey, recentAttendanceDates, teachingWeek } from "./shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, hasUsableConfig, loadSettings, matchCodesToAttendance, parseDateKey, recentAttendanceDates, teachingWeek } from "./shared.js";
 
 const PRIMARY_ALARM = "attendance-primary";
 const BACKUP_ALARM = "attendance-backup";
@@ -11,22 +11,6 @@ function nextAlarm(weekday, hour, minute) {
   target.setHours(hour, minute, 0, 0);
   if (target <= now) target.setDate(target.getDate() + 7);
   return target.getTime();
-}
-
-function validSchedule(item) {
-  return Number.isInteger(item?.weekday) && item.weekday >= 0 && item.weekday <= 6
-    && Number.isInteger(item?.hour) && item.hour >= 0 && item.hour <= 23
-    && Number.isInteger(item?.minute) && item.minute >= 0 && item.minute <= 59;
-}
-
-function hasUsableConfig(settings) {
-  const backupValid = !settings?.backup?.enabled || validSchedule(settings.backup);
-  return Boolean(
-    settings?.weekOneMonday
-    && validSchedule(settings?.reminder)
-    && backupValid
-    && (settings?.autoDiscover !== false || settings?.courses?.some((course) => course.enabled !== false && course.name && course.url && course.sessions?.length))
-  );
 }
 
 function pause(ms) {

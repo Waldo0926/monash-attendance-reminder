@@ -159,6 +159,23 @@ export function matchCodesToAttendance(text, attendanceItems) {
   });
 }
 
+export function validSchedule(item) {
+  return Number.isInteger(item?.weekday) && item.weekday >= 0 && item.weekday <= 6
+    && Number.isInteger(item?.hour) && item.hour >= 0 && item.hour <= 23
+    && Number.isInteger(item?.minute) && item.minute >= 0 && item.minute <= 59;
+}
+
+export function hasUsableConfig(settings) {
+  const backupValid = !settings?.backup?.enabled || validSchedule(settings.backup);
+  const autoDiscover = settings?.autoDiscover !== false;
+  return Boolean(
+    validSchedule(settings?.reminder)
+    && backupValid
+    && (autoDiscover
+      || (settings?.weekOneMonday && settings?.courses?.some((course) => course.enabled !== false && course.name && course.url && course.sessions?.length)))
+  );
+}
+
 export async function loadSettings() {
   const { settings } = await chrome.storage.local.get("settings");
   return settings || structuredClone(DEFAULT_SETTINGS);

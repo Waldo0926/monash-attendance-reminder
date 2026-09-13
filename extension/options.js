@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, loadSettings } from "./shared.js";
+import { DEFAULT_SETTINGS, loadSettings, validSchedule } from "./shared.js";
 
 let settings;
 const coursesRoot = document.querySelector("#courses");
@@ -31,12 +31,6 @@ function parseTime(value) {
   if (!/^\d{2}:\d{2}$/.test(value)) return { hour: NaN, minute: NaN };
   const [hour, minute] = value.split(":").map(Number);
   return { hour, minute };
-}
-
-function validSchedule(item) {
-  return Number.isInteger(item?.weekday) && item.weekday >= 0 && item.weekday <= 6
-    && Number.isInteger(item?.hour) && item.hour >= 0 && item.hour <= 23
-    && Number.isInteger(item?.minute) && item.minute >= 0 && item.minute <= 59;
 }
 
 function validCourseUrl(course) {

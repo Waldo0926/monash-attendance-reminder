@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, matchCodesToAttendance, parseDateKey, recentAttendanceDates, teachingWeek } from "../extension/shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, hasUsableConfig, matchCodesToAttendance, parseDateKey, recentAttendanceDates, teachingWeek } from "../extension/shared.js";
 
 test("ships with a blank per-user course configuration", () => {
   assert.deepEqual(DEFAULT_SETTINGS.courses, []);
@@ -48,6 +48,20 @@ test("matches a code to the correct class using nearby context", () => {
   assert.equal(results[0].code, "ABC1D");
   assert.equal(results[1].code, "XY9ZQ");
   assert.equal(results[0].confidence, "high");
+});
+
+test("treats the default auto-discovery setup as usable without a Week 1 date", () => {
+  const settings = { ...DEFAULT_SETTINGS, reminder: { weekday: 0, hour: 19, minute: 0 }, backup: { enabled: false } };
+  assert.equal(settings.weekOneMonday, "");
+  assert.equal(hasUsableConfig(settings), true);
+});
+
+test("requires a Week 1 date and a real course only once auto-discovery is turned off", () => {
+  const base = { autoDiscover: false, reminder: { weekday: 0, hour: 19, minute: 0 }, backup: { enabled: false } };
+  assert.equal(hasUsableConfig({ ...base, weekOneMonday: "" }), false);
+  assert.equal(hasUsableConfig({ ...base, weekOneMonday: "2026-07-27" }), false);
+  const course = { enabled: true, name: "FIT2102", url: "https://learning.monash.edu/x", sessions: [{ id: "s1" }] };
+  assert.equal(hasUsableConfig({ ...base, weekOneMonday: "2026-07-27", courses: [course] }), true);
 });
 
 test("builds the Units page beside Default.aspx without duplicating /student/", () => {
