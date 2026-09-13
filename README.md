@@ -1,24 +1,29 @@
 # Monash Attendance Helper
 
-A configurable Chrome extension that finds Monash attendance codes from Moodle and Ed, reminds students, and submits only after confirmation.
+A configurable Chrome extension that discovers recent classes from Monash Attendance, finds attendance codes from Gmail, Moodle, and Ed, reminds students, and submits only after confirmation.
 
-Each user configures their own course sources, class groups, semester Week 1 date, and reminder schedule. The project does **not** ship with another student's timetable as the default.
+The default mode does **not** require a manually entered timetable. It reads the last seven days of available activities from the signed-in Monash Attendance account, then searches the signed-in Gmail, Moodle, and Ed sessions for matching codes. A manual timetable remains available only as a fallback.
 
 The extension never uploads credentials, page content, attendance codes, or your timetable to this project or its website.
 
 ## What it does
 
-1. Uses the courses and class groups saved in your local extension settings.
+1. Reads recent activities from the Monash Attendance account already signed in to the same Chrome profile.
 2. Runs at your configured primary and optional backup reminder times.
-3. Opens each enabled Moodle or Ed source in a background tab using the Chrome session that is already signed in.
-4. Calculates the current teaching week from the Week 1 Monday you provide.
-5. Matches five-character attendance codes against the course, week, class label, day, and time.
-6. Sends a system notification and opens a review page when clicked.
-7. Submits only the rows selected by the student after the student ticks the explicit attendance declaration.
+3. Searches the signed-in Gmail account and discovers matching Moodle / Ed course pages in background tabs.
+4. Matches five-character attendance codes against the course, class label, and activity date.
+5. Sends a system notification and opens a review page when clicked.
+6. Submits only the rows selected by the student after the student ticks the explicit attendance declaration.
 
 Reminder times use the **current system timezone of the computer running Chrome**. The timezone is detected automatically rather than being fixed to Malaysia.
 
-## Configure your own timetable
+## Automatic discovery (default)
+
+Keep Monash Attendance, Gmail, Moodle, and Ed signed in to the same Chrome profile. Leave **Automatically discover classes from Attendance** enabled. No Week 1 date or manual course list is required.
+
+The extension checks the rolling seven-day window ending on the day it runs. It only prepares a review list; it never submits without the student's explicit attendance declaration and confirmation.
+
+## Manual timetable (optional fallback)
 
 For each course, add:
 
@@ -38,9 +43,9 @@ There are intentionally **no default FIT3162 / FIT2102 / FIT2109 routes**. Those
 4. Choose **Load unpacked** and select the `extension` folder.
 5. Pin **Monash Attendance Helper**.
 6. Open the extension settings.
-7. Set the semester Week 1 Monday and reminder times.
-8. Add your own courses and class groups, then click **Save and enable**.
-9. Keep Moodle, Ed, and Monash Attendance signed in in the same Chrome profile.
+7. Keep automatic Attendance discovery enabled and set the reminder times.
+8. Keep Gmail, Moodle, Ed, and Monash Attendance signed in in the same Chrome profile.
+9. Click **Save, then test now** and review the detected classes and codes.
 
 The graphical configurator in `site/` can generate an `attendance-helper-config.json` file. Import it from the extension settings page with **Import web config**.
 
@@ -50,11 +55,12 @@ The graphical configurator in `site/` can generate an `attendance-helper-config.
 
 ## Important limits
 
+- The extension must be installed separately in every Chrome profile/account that should be monitored.
 - The computer must be awake and Chrome must be able to run at the scheduled time. Chrome will normally deliver a missed alarm after it next starts, but an expired login still needs the student to sign in again.
 - Course staff may change post layouts. Codes marked **Review** must be checked against the shown source text before submission.
 - A code is never proof that the student attended. Only submit a record for a class actually attended.
 - The confirmation page asks for the attendance declaration every time. It is intentionally not an unattended auto-submit bot.
-- The attendance matching logic depends on the class label you configure. Use the label staff normally write near the code, such as `Tutorial 03`, `Workshop 01`, or `Studio 2`.
+- Automatic matching depends on the course/activity labels exposed by Attendance and the wording in the source. Ambiguous matches remain unchecked for review.
 
 ## Test
 
@@ -73,7 +79,7 @@ npm test
 npm run lint
 ```
 
-Then load the extension unpacked, configure at least one real course, and use **Save, then test now** from its settings page. The test should produce a Chrome notification and a Week review page.
+Then load the extension unpacked, keep automatic discovery enabled, and use **Save, then test now** from its settings page. The test should produce a Chrome notification and a recent-activities review page.
 
 Pull requests also run these automated checks through GitHub Actions.
 

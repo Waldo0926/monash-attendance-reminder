@@ -10,7 +10,7 @@ async function render() {
     results.innerHTML = `<section class="card empty"><h2>还没有检查结果</h2><p>点击“重新查找”，扩展会打开已登录的课程页面并读取本周代码。</p></section>`;
     return;
   }
-  document.querySelector("#title").textContent = `Week ${latestScan.week} 签到确认`;
+  document.querySelector("#title").textContent = latestScan.week ? `Week ${latestScan.week} 签到确认` : "最近 7 天签到确认";
   document.querySelector("#subtitle").textContent = `检查时间：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")}`;
   results.innerHTML = latestScan.items.map((item) => `
     <article class="card">

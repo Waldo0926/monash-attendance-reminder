@@ -3,10 +3,29 @@ export const ATTENDANCE_URL = "https://attendance.monash.edu.my/student/Default.
 export const DEFAULT_SETTINGS = {
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kuala_Lumpur",
   weekOneMonday: "",
+  autoDiscover: true,
+  lookbackDays: 7,
   reminder: { weekday: 0, hour: 19, minute: 0 },
   backup: { enabled: true, weekday: 1, hour: 10, minute: 0 },
   courses: []
 };
+
+export function dateInfo(date) {
+  const value = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return {
+    iso: `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`,
+    key: `${value.getDate()}_${months[value.getMonth()]}_${String(value.getFullYear()).slice(-2)}`
+  };
+}
+
+export function recentAttendanceDates(now = new Date(), count = 7) {
+  const dates = [];
+  for (let offset = Math.max(1, count) - 1; offset >= 0; offset -= 1) {
+    dates.push(dateInfo(new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset, 12)));
+  }
+  return dates;
+}
 
 export function mondayOf(date = new Date()) {
   const local = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -29,11 +48,7 @@ export function attendanceDate(settings, week, day) {
   const date = new Date(`${settings.weekOneMonday}T12:00:00`);
   if (Number.isNaN(date.getTime())) return null;
   date.setDate(date.getDate() + ((week - 1) * 7) + dayOffsets[day]);
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return {
-    iso: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
-    key: `${date.getDate()}_${months[date.getMonth()]}_${String(date.getFullYear()).slice(-2)}`
-  };
+  return dateInfo(date);
 }
 
 export function normalise(value) {
@@ -89,6 +104,47 @@ export function extractCandidates(text, course, week) {
       confidence: best?.score >= 20 ? "high" : best?.score >= 12 ? "review" : "missing",
       context: best?.score >= 12 ? best.context.slice(0, 420) : "",
       sourceUrl: course.url
+    };
+  });
+}
+
+export function matchCodesToAttendance(text, attendanceItems) {
+  const clean = String(text || "").replace(/\u00a0/g, " ").replace(/[\t ]+/g, " ");
+  const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const codeRe = /\b(?=[A-Z0-9]{5}\b)(?=.*[A-Z])(?=.*\d)[A-Z0-9]{5}\b/g;
+  const hits = [];
+  lines.forEach((line, lineIndex) => {
+    for (const match of line.matchAll(codeRe)) {
+      if (/^(FIT|ECE|ENG|MMA|TRC)\d$/i.test(match[0])) continue;
+      hits.push({
+        code: match[0].toUpperCase(),
+        line,
+        context: lines.slice(Math.max(0, lineIndex - 7), Math.min(lines.length, lineIndex + 8)).join(" · ")
+      });
+    }
+  });
+
+  return attendanceItems.map((item) => {
+    const course = normalise(item.course);
+    const sessionAliases = [item.session, ...(item.aliases || [])].map(normalise).filter(Boolean);
+    const dateTokens = [item.attendanceDate?.iso, item.attendanceDate?.key?.replaceAll("_", " ")].map(normalise).filter(Boolean);
+    const ranked = hits.map((hit) => {
+      const context = normalise(hit.context);
+      const line = normalise(hit.line);
+      let score = 0;
+      if (course && context.includes(course)) score += 14;
+      if (course && line.includes(course)) score += 12;
+      if (sessionAliases.some((alias) => context.includes(alias))) score += 14;
+      if (sessionAliases.some((alias) => line.includes(alias))) score += 14;
+      if (dateTokens.some((token) => context.includes(token))) score += 4;
+      return { ...hit, score };
+    }).sort((a, b) => b.score - a.score);
+    const best = ranked[0];
+    return {
+      ...item,
+      code: best?.score >= 24 ? best.code : "",
+      confidence: best?.score >= 36 ? "high" : best?.score >= 24 ? "review" : "missing",
+      context: best?.score >= 24 ? best.context.slice(0, 520) : ""
     };
   });
 }

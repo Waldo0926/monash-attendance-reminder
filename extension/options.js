@@ -71,6 +71,7 @@ function normaliseSettings(value) {
     ...base,
     ...(value || {}),
     timezone: deviceTimeZone(),
+    autoDiscover: value?.autoDiscover !== false,
     reminder: { ...base.reminder, ...(value?.reminder || {}) },
     backup: { ...base.backup, ...(value?.backup || {}) },
     courses: Array.isArray(value?.courses) ? value.courses.map((course) => ({
@@ -145,6 +146,7 @@ function collectCoursesFromDom() {
 
 function collectTopLevel() {
   settings.weekOneMonday = document.querySelector("#weekOneMonday").value;
+  settings.autoDiscover = document.querySelector("#autoDiscover").checked;
   settings.timezone = deviceTimeZone();
   settings.reminder.weekday = Number(document.querySelector("#primaryDay").value);
   Object.assign(settings.reminder, parseTime(document.querySelector("#primaryTime").value));
@@ -154,13 +156,14 @@ function collectTopLevel() {
 }
 
 function validate() {
-  if (!settings.weekOneMonday || Number.isNaN(new Date(`${settings.weekOneMonday}T00:00:00`).getTime())) {
+  if (settings.autoDiscover === false && (!settings.weekOneMonday || Number.isNaN(new Date(`${settings.weekOneMonday}T00:00:00`).getTime()))) {
     return "请设置有效的 Week 1 星期一日期。";
   }
   if (!validSchedule(settings.reminder)) return "请填写完整且有效的主提醒时间。";
   if (settings.backup.enabled && !validSchedule(settings.backup)) return "请填写完整且有效的备用提醒时间。";
 
   const enabledCourses = settings.courses.filter((course) => course.enabled !== false);
+  if (settings.autoDiscover !== false) return "";
   if (!enabledCourses.length) return "请至少添加并启用一门课程。";
   for (const course of enabledCourses) {
     if (!course.name) return "每门启用的课程都需要填写课程代码或名称。";
@@ -197,6 +200,7 @@ async function collectAndSave() {
 async function init() {
   settings = normaliseSettings(await loadSettings());
   document.querySelector("#weekOneMonday").value = settings.weekOneMonday || "";
+  document.querySelector("#autoDiscover").checked = settings.autoDiscover !== false;
   document.querySelector("#timezone").value = deviceTimeZone();
   document.querySelector("#primaryDay").value = settings.reminder.weekday;
   document.querySelector("#primaryTime").value = timeValue(settings.reminder);

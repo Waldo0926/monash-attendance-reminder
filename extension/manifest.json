@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Monash Attendance Helper",
-  "version": "1.0.0",
-  "description": "Find weekly attendance codes from Moodle and Ed, remind you, and submit only after confirmation.",
+  "version": "1.1.0",
+  "description": "Discover recent classes from Monash Attendance, find codes in Gmail/Moodle/Ed, and submit only after confirmation.",
   "permissions": ["alarms", "notifications", "storage", "tabs", "scripting"],
   "host_permissions": [
     "https://learning.monash.edu/*",
     "https://edstem.org/*",
+    "https://mail.google.com/*",
     "https://attendance.monash.edu.my/*"
   ],
   "background": { "service_worker": "service-worker.js", "type": "module" },
@@ -20,6 +21,7 @@
       "matches": [
         "https://learning.monash.edu/*",
         "https://edstem.org/*",
+        "https://mail.google.com/*",
         "https://attendance.monash.edu.my/*"
       ],
       "js": ["content.js"],

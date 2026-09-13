@@ -1,11 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS, attendanceDate, extractCandidates, teachingWeek } from "../extension/shared.js";
+import { DEFAULT_SETTINGS, attendanceDate, extractCandidates, matchCodesToAttendance, recentAttendanceDates, teachingWeek } from "../extension/shared.js";
 
 test("ships with a blank per-user course configuration", () => {
   assert.deepEqual(DEFAULT_SETTINGS.courses, []);
   assert.equal(DEFAULT_SETTINGS.weekOneMonday, "");
+  assert.equal(DEFAULT_SETTINGS.autoDiscover, true);
   assert.equal(teachingWeek(DEFAULT_SETTINGS, new Date("2026-09-13T12:00:00+08:00")), null);
+});
+
+test("builds a seven-day Attendance discovery window without a timetable", () => {
+  const dates = recentAttendanceDates(new Date("2026-09-13T12:00:00+08:00"), 7);
+  assert.equal(dates[0].iso, "2026-09-07");
+  assert.equal(dates[6].iso, "2026-09-13");
+});
+
+test("matches a Gmail code to a class discovered from Attendance", () => {
+  const items = [{ course: "ENG2005", session: "Workshop 12", attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" } }];
+  const [result] = matchCodesToAttendance("Week 7 Attendance Codes\nENG2005 Workshop 12 Tuesday 8 Sep 12:00PM S7M3X", items);
+  assert.equal(result.code, "S7M3X");
 });
 
 test("calculates Week 1 and Week 7 from the configured Monday", () => {

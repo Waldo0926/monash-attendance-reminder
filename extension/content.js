@@ -37,9 +37,28 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return;
   }
 
+  if (message.type === "DISCOVER_ATTENDANCE_SESSIONS") {
+    const links = [...document.querySelectorAll("a[href*='Entry.aspx']")].map((link) => ({
+      label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
+      href: link.href
+    })).filter((item) => item.label && item.href);
+    sendResponse({ ok: true, title: document.title, url: location.href, links });
+    return;
+  }
+
+  if (message.type === "DISCOVER_COURSE_LINKS") {
+    const codes = (message.courseCodes || []).map((item) => String(item).toLowerCase());
+    const links = [...document.querySelectorAll("a[href]")].map((link) => ({
+      label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
+      href: link.href
+    })).filter((item) => codes.some((code) => `${item.label} ${item.href}`.toLowerCase().includes(code)));
+    sendResponse({ ok: true, links });
+    return;
+  }
+
   if (message.type === "FIND_ATTENDANCE_SESSION") {
     const targetCourse = String(message.course || "").toLowerCase();
-    const targetSession = String(message.session || "").toLowerCase().replace(/\b0+(\d+)\b/g, "$1");
+    const targetSession = String(message.attendanceLabel || message.session || "").toLowerCase().replace(/\b0+(\d+)\b/g, "$1");
     const links = [...document.querySelectorAll("a[href*='Entry.aspx']")];
     const match = links.find((link) => {
       const text = (link.innerText || link.textContent || "").toLowerCase().replace(/\b0+(\d+)\b/g, "$1");

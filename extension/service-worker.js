@@ -1,4 +1,4 @@
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, loadSettings, teachingWeek } from "./shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, extractCandidates, loadSettings, matchCodesToAttendance, recentAttendanceDates, teachingWeek } from "./shared.js";
 
 const PRIMARY_ALARM = "attendance-primary";
 const BACKUP_ALARM = "attendance-backup";
@@ -25,8 +25,12 @@ function hasUsableConfig(settings) {
     settings?.weekOneMonday
     && validSchedule(settings?.reminder)
     && backupValid
-    && settings?.courses?.some((course) => course.enabled !== false && course.name && course.url && course.sessions?.length)
+    && (settings?.autoDiscover !== false || settings?.courses?.some((course) => course.enabled !== false && course.name && course.url && course.sessions?.length))
   );
+}
+
+function pause(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function configureAlarms() {
@@ -46,7 +50,12 @@ async function configureAlarms() {
   }
 }
 
-function waitForLoaded(tabId, timeoutMs = 25000) {
+async function waitForLoaded(tabId, timeoutMs = 25000) {
+  const current = await chrome.tabs.get(tabId).catch(() => null);
+  if (current?.status === "complete") {
+    await pause(1200);
+    return;
+  }
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
@@ -61,6 +70,101 @@ function waitForLoaded(tabId, timeoutMs = 25000) {
     };
     chrome.tabs.onUpdated.addListener(listener);
   });
+}
+
+function sessionName(label, course) {
+  const withoutCourse = String(label || "").replace(new RegExp(course, "ig"), " ").replace(/\s+/g, " ").trim();
+  const match = withoutCourse.match(/(workshop|tutorial|studio|applied class|practical|laboratory|lab|seminar)[^|·,;]*/i);
+  return (match?.[0] || withoutCourse || "Scheduled activity").trim();
+}
+
+async function discoverAttendance(settings) {
+  const dates = recentAttendanceDates(new Date(), Number(settings.lookbackDays) || 7);
+  const items = [];
+  const errors = [];
+  for (const date of dates) {
+    const url = new URL("student/Units.aspx", ATTENDANCE_URL);
+    url.hash = date.key;
+    const tab = await chrome.tabs.create({ url: url.href, active: false });
+    try {
+      await waitForLoaded(tab.id);
+      const page = await chrome.tabs.sendMessage(tab.id, { type: "DISCOVER_ATTENDANCE_SESSIONS" });
+      for (const link of page.links || []) {
+        const course = link.label.match(/\b[A-Z]{3}\d{4}\b/i)?.[0]?.toUpperCase();
+        if (!course) continue;
+        const label = sessionName(link.label, course);
+        items.push({
+          id: `attendance:${date.iso}:${link.href}`,
+          courseId: course.toLowerCase(),
+          course,
+          sessionId: label.toLowerCase().replace(/\W+/g, "-"),
+          session: label,
+          attendanceLabel: link.label,
+          day: new Date(`${date.iso}T12:00:00`).toLocaleDateString("en-US", { weekday: "long" }),
+          time: "",
+          week: null,
+          code: "",
+          confidence: "missing",
+          context: "",
+          sourceUrl: url.href,
+          attendanceDate: date
+        });
+      }
+    } catch (error) {
+      errors.push(`${date.iso}: ${error.message}`);
+    } finally {
+      if (tab.id) await chrome.tabs.remove(tab.id).catch(() => {});
+    }
+  }
+  return { items: [...new Map(items.map((item) => [item.id, item])).values()], errors };
+}
+
+async function scanTextUrl(url, waitMs = 1800) {
+  const tab = await chrome.tabs.create({ url, active: false });
+  try {
+    await waitForLoaded(tab.id);
+    await pause(waitMs);
+    const page = await chrome.tabs.sendMessage(tab.id, { type: "SCAN_SOURCE" });
+    if (page.loginRequired) throw new Error("需要重新登录");
+    return { ok: true, url, text: page.text || "" };
+  } catch (error) {
+    return { ok: false, url, error: error.message, text: "" };
+  } finally {
+    if (tab.id) await chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+async function discoverCourseUrls(dashboardUrl, courseCodes) {
+  const tab = await chrome.tabs.create({ url: dashboardUrl, active: false });
+  try {
+    await waitForLoaded(tab.id);
+    await pause(1800);
+    const page = await chrome.tabs.sendMessage(tab.id, { type: "DISCOVER_COURSE_LINKS", courseCodes });
+    return [...new Set((page.links || []).map((item) => item.href))].slice(0, 20);
+  } catch {
+    return [];
+  } finally {
+    if (tab.id) await chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+async function automaticSourceScans(items) {
+  const codes = [...new Set(items.map((item) => item.course).filter(Boolean))];
+  if (!codes.length) return [];
+  const dates = items.map((item) => item.attendanceDate?.iso).filter(Boolean).sort();
+  const after = dates[0]?.replaceAll("-", "/");
+  const beforeDate = new Date(`${dates.at(-1)}T12:00:00`);
+  beforeDate.setDate(beforeDate.getDate() + 1);
+  const before = `${beforeDate.getFullYear()}/${String(beforeDate.getMonth() + 1).padStart(2, "0")}/${String(beforeDate.getDate()).padStart(2, "0")}`;
+  const query = `(${codes.join(" OR ")}) attendance after:${after} before:${before}`;
+  const gmailTabs = await chrome.tabs.query({ url: "https://mail.google.com/*" });
+  const gmailBase = gmailTabs[0]?.url?.match(/^(https:\/\/mail\.google\.com\/mail\/u\/\d+\/)/)?.[1] || "https://mail.google.com/mail/";
+  const urls = [`${gmailBase}#search/${encodeURIComponent(query)}`];
+  urls.push(...await discoverCourseUrls("https://learning.monash.edu/my/courses.php", codes));
+  urls.push(...await discoverCourseUrls("https://edstem.org/au/dashboard", codes));
+  const scans = [];
+  for (const url of [...new Set(urls)]) scans.push(await scanTextUrl(url, url.includes("mail.google.com") ? 4500 : 1800));
+  return scans;
 }
 
 async function scanCourse(course, week) {
@@ -104,8 +208,30 @@ async function scanAll(reason = "manual") {
       type: "basic",
       iconUrl: "icons/icon128.png",
       title: "Attendance Helper 尚未配置",
-      message: "请先在扩展设置中添加课程、班次、Week 1 日期和有效提醒时间。",
+      message: "请先设置有效提醒时间；课程可由 Attendance 自动识别。",
       priority: 1
+    });
+    return result;
+  }
+
+  if (settings.autoDiscover !== false) {
+    const discovered = await discoverAttendance(settings);
+    const sourceScans = await automaticSourceScans(discovered.items);
+    const combinedText = sourceScans.filter((scan) => scan.ok).map((scan) => scan.text).join("\n");
+    const items = matchCodesToAttendance(combinedText, discovered.items).map((item) => ({
+      ...item,
+      sourceUrl: sourceScans.find((scan) => scan.ok && item.code && scan.text.includes(item.code))?.url || item.sourceUrl
+    }));
+    const result = { reason, mode: "attendance-discovery", week: null, scannedAt: new Date().toISOString(), items, scans: sourceScans, discoveryErrors: discovered.errors };
+    await chrome.storage.local.set({ latestScan: result });
+    const found = items.filter((item) => item.code).length;
+    await chrome.notifications.create("attendance-scan", {
+      type: "basic",
+      iconUrl: "icons/icon128.png",
+      title: "最近 7 天 Attendance 已检查",
+      message: items.length ? `识别到 ${items.length} 节课，找到 ${found} 个代码。点击核对。` : "Attendance 最近 7 天没有显示可填写的课程，或当前账号需要重新登录。",
+      priority: 2,
+      requireInteraction: true
     });
     return result;
   }
@@ -148,7 +274,8 @@ async function submitOne(item, settings) {
   const session = await chrome.tabs.sendMessage(tab.id, {
     type: "FIND_ATTENDANCE_SESSION",
     course: item.course,
-    session: item.session
+    session: item.session,
+    attendanceLabel: item.attendanceLabel
   });
   if (!session.ok) return { ...session, tabId: tab.id };
   await chrome.tabs.update(tab.id, { url: session.href });
