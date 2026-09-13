@@ -52,17 +52,26 @@ function findSubmitButton(input) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "READ_PAGE") {
-    waitForStablePage().then(() => {
+    waitForStablePage(message.maxMs || 8000).then(() => {
       const links = [...document.querySelectorAll("a[href]")].map((link) => ({
         label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
         href: link.href
       })).filter((item) => item.label && item.href);
+      // Gmail's message list has no <a href> per message; each row carries the thread id
+      // as a data attribute instead, and that id is enough to open the thread by URL.
+      const gmailThreads = location.hostname === "mail.google.com"
+        ? [...document.querySelectorAll("[data-legacy-thread-id]")].map((node) => ({
+          id: node.getAttribute("data-legacy-thread-id"),
+          label: (node.closest("tr")?.innerText || node.innerText || "").replace(/\s+/g, " ").trim()
+        })).filter((thread) => thread.id)
+        : [];
       sendResponse({
         ok: true,
         title: document.title,
         url: location.href,
         text: visibleText().slice(0, 750000),
         links,
+        gmailThreads,
         loginRequired: /login|sign in|log in|okta/i.test(document.title + " " + location.href)
       });
     });

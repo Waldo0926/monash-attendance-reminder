@@ -11,7 +11,7 @@ async function render() {
     return;
   }
   document.querySelector("#title").textContent = latestScan.week ? `Week ${latestScan.week} 签到确认` : "最近 7 天签到确认";
-  document.querySelector("#subtitle").textContent = `检查时间：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")}`;
+  document.querySelector("#subtitle").textContent = `检查时间：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")} · 扩展版本 v${chrome.runtime.getManifest().version}`;
   results.innerHTML = latestScan.items.map((item) => `
     <article class="card">
       <div class="row"><label><input class="pick" data-id="${escapeHtml(item.id)}" type="checkbox" ${item.code ? "checked" : "disabled"}> ${escapeHtml(item.course)} · ${escapeHtml(item.session)}</label><span class="status ${item.confidence}">${item.confidence === "high" ? "高可信" : item.confidence === "review" ? "请核对" : "未找到"}</span></div>

@@ -68,15 +68,15 @@ function sessionName(label, course) {
 
 // Opens a page in a background tab, lets content.js wait for it to finish rendering,
 // and returns its visible text plus every link on it. Never throws.
-async function readPage(url) {
+async function readPage(url, { maxMs } = {}) {
   const tab = await chrome.tabs.create({ url, active: false });
   try {
     await waitForLoaded(tab.id);
-    const page = await chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE" });
+    const page = await chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE", maxMs });
     if (page.loginRequired) throw new Error("需要重新登录");
-    return { ok: true, url, text: page.text || "", links: page.links || [] };
+    return { ok: true, url, text: page.text || "", links: page.links || [], gmailThreads: page.gmailThreads || [] };
   } catch (error) {
-    return { ok: false, url, error: error.message, text: "", links: [] };
+    return { ok: false, url, error: error.message, text: "", links: [], gmailThreads: [] };
   } finally {
     if (tab.id) await chrome.tabs.remove(tab.id).catch(() => {});
   }
@@ -128,22 +128,35 @@ async function discoverAttendance(settings) {
 }
 
 // Codes are never on the landing pages. Ed puts them inside an announcement thread,
-// Moodle inside the current week's section page. So this walks:
+// Moodle inside the current week's section page, and Ed's own notification emails carry
+// the full announcement body. So this walks:
+//   Gmail search -> each matching email (staff post to Ed, Ed emails it out)
 //   Ed dashboard -> each unit's discussion list -> threads titled attendance/code/week N
 //   Moodle "My units" -> each unit's home page -> the section pages for this week ±1
-// and finally a Gmail search, scanning every page it opens along the way.
+// scanning every page it opens along the way.
 async function automaticSourceScans(items, settings) {
   const codes = [...new Set(items.map((item) => item.course).filter(Boolean))];
   if (!codes.length) return [];
   const scans = [];
   const visited = new Set();
-  const scan = async (url) => {
+  const scan = async (url, options) => {
     if (!url || visited.has(url)) return null;
     visited.add(url);
-    const page = await readPage(url);
+    const page = await readPage(url, options);
     scans.push(page);
     return page;
   };
+
+  const gmailTabs = await chrome.tabs.query({ url: "https://mail.google.com/*" });
+  const gmailBase = gmailTabs[0]?.url?.match(/^(https:\/\/mail\.google\.com\/mail\/u\/\d+\/)/)?.[1] || "https://mail.google.com/mail/u/0/";
+  const query = `(${codes.join(" OR ")}) attendance newer_than:21d`;
+  const search = await scan(`${gmailBase}#search/${encodeURIComponent(query)}`, { maxMs: 20000 });
+  if (search?.ok) {
+    const threads = new Map();
+    for (const thread of search.gmailThreads) if (!threads.has(thread.id)) threads.set(thread.id, thread.label);
+    const wanted = [...threads.entries()].filter(([, label]) => /attendance|code/i.test(label)).slice(0, 6);
+    for (const [id] of wanted) await scan(`${gmailBase}#all/${id}`, { maxMs: 15000 });
+  }
 
   const edDashboard = await readPage("https://edstem.org/au/dashboard");
   const edCourses = findCourseLinks(edDashboard.links, codes, {
@@ -171,18 +184,6 @@ async function automaticSourceScans(items, settings) {
       : [];
     const weekLinks = moodleWeekLinks(home.links);
     for (const week of pickWeekNumbers(weekLinks.keys(), targetWeeks)) await scan(weekLinks.get(week));
-  }
-
-  const sorted = itemDates.slice().sort();
-  if (sorted.length) {
-    const after = sorted[0].replaceAll("-", "/");
-    const beforeDate = new Date(`${sorted.at(-1)}T12:00:00`);
-    beforeDate.setDate(beforeDate.getDate() + 1);
-    const before = `${beforeDate.getFullYear()}/${String(beforeDate.getMonth() + 1).padStart(2, "0")}/${String(beforeDate.getDate()).padStart(2, "0")}`;
-    const query = `(${codes.join(" OR ")}) attendance after:${after} before:${before}`;
-    const gmailTabs = await chrome.tabs.query({ url: "https://mail.google.com/*" });
-    const gmailBase = gmailTabs[0]?.url?.match(/^(https:\/\/mail\.google\.com\/mail\/u\/\d+\/)/)?.[1] || "https://mail.google.com/mail/";
-    await scan(`${gmailBase}#search/${encodeURIComponent(query)}`);
   }
 
   return scans;
