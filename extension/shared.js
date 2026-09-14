@@ -85,7 +85,6 @@ function stripHash(href) {
   return String(href || "").split("#")[0];
 }
 
-
 export function scopedAttendanceItems(items, courseHints) {
   const allowed = new Set((courseHints || []).map((value) => normalise(value)).filter(Boolean));
   if (!allowed.size) return (items || []).map((item, index) => ({ item, index }));
@@ -429,6 +428,20 @@ export function matchCodesToAttendance(text, attendanceItems) {
     const numberRe = sessionNumber
       ? new RegExp(`\\b0*${Number(sessionNumber)}\\b(?![:\\d])(?!\\s*(?:${MONTH_NAMES_RE}))`, "i")
       : null;
+    // Some staff tables omit Allocate+ group numbers entirely. Exact date + type + time is
+    // still safe when this Attendance list has only one class in that slot; otherwise the
+    // missing group number must remain a manual-review match.
+    const slotPeers = attendanceItems.filter((other) => {
+      const otherCourse = normalise(other.course);
+      const otherType = SESSION_TYPE_RE.exec(other.session || "")?.[1]?.toLowerCase();
+      const otherTime = normaliseTimeToken(other.time);
+      return otherCourse === course
+        && otherType === sessionType
+        && otherTime === itemTime
+        && String(other.attendanceDate?.key || "") === String(item.attendanceDate?.key || "");
+    }).length;
+    const exactSlotUnique = slotPeers === 1;
+
     const ranked = hits.map((hit) => {
       const context = normalise(hit.context);
       const line = normalise(hit.line);
@@ -444,6 +457,7 @@ export function matchCodesToAttendance(text, attendanceItems) {
       const hasType = Boolean(typeRe?.test(row));
       const hasTime = lineHasMatchingTime(row, itemTime);
       const hasDate = Boolean(lineDateRe?.test(row));
+      const rowHasAnyDate = Boolean(ANY_DATE_RE.test(row));
       const explicitNumbers = explicitRowSessionNumbers(row);
       const hasNumber = Boolean(sessionNumber)
         ? (explicitNumbers.size
@@ -451,20 +465,30 @@ export function matchCodesToAttendance(text, attendanceItems) {
           : Boolean(numberRe?.test((itemTime || lineDateRe) ? row : line)))
         : false;
       const numberConflict = Boolean(sessionNumber && explicitNumbers.size && !hasNumber);
-      const dateConflict = Boolean(lineDateRe && ANY_DATE_RE.test(row) && !hasDate);
+      const dateConflict = Boolean(lineDateRe && rowHasAnyDate && !hasDate);
+      const dateMissing = Boolean(lineDateRe && !rowHasAnyDate);
 
       if (hasType && hasTime) score += 26;
       else if (hasTime) score += 8;
       if (lineDateRe) {
-        if (hasDate) score += 10;
-        else if (dateConflict) score -= 80;
+        if (hasDate) score += 14;
+        else if (dateConflict) score -= 100;
+        else if (dateMissing) score -= 12;
       }
       if (numberConflict) score -= 80;
       else if (hasNumber) score += 8;
       // If OCR dropped the word "Workshop" but preserved the exact date, time and session
       // number, those three independent fields still uniquely identify the Attendance row.
       if (hasDate && hasTime && hasNumber) score += 12;
-      return { ...hit, score, numberConflict, dateConflict, numberVerified: !sessionNumber || hasNumber };
+      return {
+        ...hit,
+        score,
+        numberConflict,
+        dateConflict,
+        dateVerified: !lineDateRe || hasDate,
+        numberVerified: !sessionNumber || hasNumber,
+        exactSlotUnique
+      };
     });
     return ranked.filter((hit) => !hit.numberConflict && !hit.dateConflict && hit.score >= 24);
   });
@@ -486,10 +510,11 @@ export function matchCodesToAttendance(text, attendanceItems) {
 
   return attendanceItems.map((item, index) => {
     const best = assigned.get(index);
+    const numberSafe = best && (best.numberVerified || (best.dateVerified && best.exactSlotUnique));
     return {
       ...item,
       code: best ? best.code : "",
-      confidence: best ? (best.score >= 36 && best.numberVerified ? "high" : "review") : "missing",
+      confidence: best ? (best.score >= 36 && best.dateVerified && numberSafe ? "high" : "review") : "missing",
       context: best ? best.context.slice(0, 520) : ""
     };
   });
