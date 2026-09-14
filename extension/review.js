@@ -19,9 +19,12 @@ async function render() {
   }
   document.querySelector("#title").textContent = latestScan.week ? `Week ${latestScan.week} 签到确认` : "过去一周签到确认";
   const completedCount = (latestScan.items || []).filter((item) => item.completed || item.confidence === "completed").length;
-  const reconciliationNote = latestScan.reconciliation?.status === "complete"
-    ? ` · 已签到 ${completedCount} 节 · 最终核对完成`
-    : "";
+  let reconciliationNote = "";
+  if (latestScan.reconciliation?.status === "complete") {
+    reconciliationNote = ` · 已签到 ${completedCount} 节 · 最终核对完成`;
+  } else if (latestScan.reconciliation?.status === "failed") {
+    reconciliationNote = ` · 最终核对失败：${latestScan.reconciliation.error || "未知错误"}`;
+  }
   document.querySelector("#subtitle").textContent = `检查时间：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")} · 扩展版本 v${chrome.runtime.getManifest().version}${reconciliationNote}`;
   results.innerHTML = latestScan.items.map((item) => {
     const status = itemStatus(item);
@@ -61,8 +64,19 @@ function updateSubmit() {
 attended.addEventListener("change", updateSubmit);
 results.addEventListener("change", updateSubmit);
 document.querySelector("#rescan").addEventListener("click", async () => {
-  results.innerHTML = `<section class="card empty"><h2>正在查找…</h2><p>会短暂打开后台标签页。Gmail / Ed / Moodle 完成后还会进行一次 Attendance 与 Moodle 表格最终核对。</p></section>`;
-  await chrome.runtime.sendMessage({ type: "SCAN_ALL" });
+  results.innerHTML = `<section class="card empty"><h2>正在查找…</h2><p>先扫描 Gmail / Ed / Moodle，再直接读取 Attendance 完成状态和 Moodle 表格。完成最终核对后才会显示结果。</p></section>`;
+  const scan = await chrome.runtime.sendMessage({ type: "SCAN_ALL" });
+  if (!scan?.ok) {
+    results.innerHTML = `<section class="card empty"><h2>扫描失败</h2><p>${escapeHtml(scan?.error || "未知错误")}</p></section>`;
+    return;
+  }
+  results.innerHTML = `<section class="card empty"><h2>正在做最终核对…</h2><p>正在核对已签到课程，并按日期 / 班号 / 时间读取 Moodle Attendance 表格。</p></section>`;
+  const final = await chrome.runtime.sendMessage({ type: "RUN_FINAL_RECONCILIATION" });
+  if (!final?.ok) {
+    await render();
+    updateSubmit();
+    return;
+  }
   await render();
   updateSubmit();
 });
@@ -84,6 +98,10 @@ submit.addEventListener("click", async () => {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || !changes.latestScan) return;
+  const next = changes.latestScan.newValue;
+  // During a manual scan, do not replace the explicit "正在最终核对" state with the
+  // intermediate one-code result. The rescan handler renders only after v2 finishes.
+  if (next?.reason === "manual" && next?.mode === "attendance-discovery" && next?.reconciliation?.version !== 2) return;
   render().then(updateSubmit).catch(() => {});
 });
 
