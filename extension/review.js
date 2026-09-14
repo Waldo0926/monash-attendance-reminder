@@ -4,6 +4,13 @@ const submit = document.querySelector("#submit");
 
 function escapeHtml(value) { return String(value || "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 
+function itemStatus(item) {
+  if (item.completed || item.confidence === "completed") return { key: "completed", label: "已签到" };
+  if (item.confidence === "high") return { key: "high", label: "高可信" };
+  if (item.confidence === "review") return { key: "review", label: "请核对" };
+  return { key: "missing", label: "未找到" };
+}
+
 async function render() {
   const { latestScan } = await chrome.storage.local.get("latestScan");
   if (!latestScan) {
@@ -11,14 +18,30 @@ async function render() {
     return;
   }
   document.querySelector("#title").textContent = latestScan.week ? `Week ${latestScan.week} 签到确认` : "过去一周签到确认";
-  document.querySelector("#subtitle").textContent = `检查时间：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")} · 扩展版本 v${chrome.runtime.getManifest().version}`;
-  results.innerHTML = latestScan.items.map((item) => `
-    <article class="card">
-      <div class="row"><label><input class="pick" data-id="${escapeHtml(item.id)}" type="checkbox" ${item.code && item.confidence === "high" ? "checked" : ""} ${item.code ? "" : "disabled"}> ${escapeHtml(item.course)} · ${escapeHtml(item.session)}</label><span class="status ${item.confidence}">${item.confidence === "high" ? "高可信" : item.confidence === "review" ? "请核对" : "未找到"}</span></div>
-      <div class="row"><p>${escapeHtml(item.day)} ${escapeHtml(item.time)}</p><span class="code">${escapeHtml(item.code || "—")}</span></div>
-      ${item.context ? `<div class="context">${escapeHtml(item.context)}</div>` : `<p class="muted">来源页面没有匹配到这个班次，请手动打开来源检查。</p>`}
-      <a href="${escapeHtml(item.sourceUrl)}" target="_blank">打开来源 ↗</a>
-    </article>`).join("");
+  const completedCount = (latestScan.items || []).filter((item) => item.completed || item.confidence === "completed").length;
+  const reconciliationNote = latestScan.reconciliation?.status === "complete"
+    ? ` · 已签到 ${completedCount} 节 · 最终核对完成`
+    : "";
+  document.querySelector("#subtitle").textContent = `检查时间：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")} · 扩展版本 v${chrome.runtime.getManifest().version}${reconciliationNote}`;
+  results.innerHTML = latestScan.items.map((item) => {
+    const status = itemStatus(item);
+    const completed = status.key === "completed";
+    const autoChecked = item.code && item.confidence === "high";
+    const checkboxDisabled = completed || !item.code;
+    const context = completed
+      ? (item.context || "Monash Attendance 已显示完成，无需再次提交。")
+      : item.context;
+    const sourceLink = item.sourceUrl
+      ? `<a href="${escapeHtml(item.sourceUrl)}" target="_blank">打开来源 ↗</a>`
+      : "";
+    return `
+    <article class="card ${completed ? "completed-card" : ""}">
+      <div class="row"><label><input class="pick" data-id="${escapeHtml(item.id)}" type="checkbox" ${autoChecked && !completed ? "checked" : ""} ${checkboxDisabled ? "disabled" : ""}> ${escapeHtml(item.course)} · ${escapeHtml(item.session)}</label><span class="status ${status.key}">${status.label}</span></div>
+      <div class="row"><p>${escapeHtml(item.day)} ${escapeHtml(item.time)}</p><span class="code ${completed ? "completed-code" : ""}">${completed ? "✓ 已完成" : escapeHtml(item.code || "—")}</span></div>
+      ${context ? `<div class="context">${escapeHtml(context)}</div>` : `<p class="muted">来源页面没有匹配到这个班次，请手动打开来源检查。</p>`}
+      ${sourceLink}
+    </article>`;
+  }).join("");
 
   const scans = latestScan.scans || [];
   const scanLog = document.querySelector("#scanLog");
@@ -26,27 +49,32 @@ async function render() {
   document.querySelector("#scanList").innerHTML = [
     ...(latestScan.discoveryErrors || []).map((error) => `<li class="scan-failed">Attendance：${escapeHtml(error)}</li>`),
     ...scans.map((scan) => `<li class="${scan.ok ? "scan-ok" : "scan-failed"}">${scan.ok ? "✓" : "✗"} <a href="${escapeHtml(scan.url)}" target="_blank">${escapeHtml(scan.url)}</a>${scan.ok
-      ? ` · ${scan.textLength ?? 0} 字 · ${scan.linkCount ?? 0} 链接${scan.courses?.length ? ` · 课程 ${scan.courses.map((course) => escapeHtml(String(course).toUpperCase())).join("/")}` : ""}${scan.imageCount ? ` · ${scan.imageCount} 张候选图 / ${scan.ocrSelectedCount ?? 0} 张送入OCR（${scan.ocrLength ?? 0} 字）` : ""}${scan.ocrError ? ` · OCR失败：${escapeHtml(scan.ocrError)}` : ""}${scan.threadCount ? ` · ${scan.threadCount} 封邮件` : ""} · ${scan.codeLikeCount ?? 0} 个疑似代码${scan.excerpt ? ` <details><summary>查看抓到的文字</summary><pre class="excerpt">${escapeHtml(scan.excerpt)}</pre></details>` : ""}${scan.ocrDetails?.length ? ` <details><summary>查看逐图 OCR</summary>${scan.ocrDetails.map((detail) => `<pre class="excerpt">图片 ${detail.index}${detail.width || detail.height ? ` · ${detail.width || "?"}×${detail.height || "?"}` : ""}${detail.src ? ` · ${escapeHtml(detail.src)}` : ""}\n${escapeHtml(detail.text || detail.error || "（无文字）")}${detail.passes?.length ? `\n\n--- OCR passes ---\n${detail.passes.map((pass) => `[${escapeHtml(pass.label)}]\n${escapeHtml(pass.text || "（无文字）")}`).join("\n\n")}` : ""}</pre>`).join("")}</details>` : ""}`
+      ? ` · ${scan.textLength ?? 0} 字 · ${scan.linkCount ?? 0} 链接${scan.courses?.length ? ` · 课程 ${scan.courses.map((course) => escapeHtml(String(course).toUpperCase())).join("/")}` : ""}${scan.structuredRowCount ? ` · ${scan.structuredRowCount} 条结构化签到记录` : ""}${scan.imageCount ? ` · ${scan.imageCount} 张候选图 / ${scan.ocrSelectedCount ?? 0} 张送入OCR（${scan.ocrLength ?? 0} 字）` : ""}${scan.ocrError ? ` · OCR失败：${escapeHtml(scan.ocrError)}` : ""}${scan.threadCount ? ` · ${scan.threadCount} 封邮件` : ""} · ${scan.codeLikeCount ?? 0} 个疑似代码${scan.excerpt ? ` <details><summary>查看抓到的文字</summary><pre class="excerpt">${escapeHtml(scan.excerpt)}</pre></details>` : ""}${scan.ocrDetails?.length ? ` <details><summary>查看逐图 OCR</summary>${scan.ocrDetails.map((detail) => `<pre class="excerpt">图片 ${detail.index}${detail.width || detail.height ? ` · ${detail.width || "?"}×${detail.height || "?"}` : ""}${detail.src ? ` · ${escapeHtml(detail.src)}` : ""}\n${escapeHtml(detail.text || detail.error || "（无文字）")}${detail.passes?.length ? `\n\n--- OCR passes ---\n${detail.passes.map((pass) => `[${escapeHtml(pass.label)}]\n${escapeHtml(pass.text || "（无文字）")}`).join("\n\n")}` : ""}</pre>`).join("")}</details>` : ""}`
       : ` · ${escapeHtml(scan.error || "失败")}`}</li>`)
   ].join("");
 }
 
 function updateSubmit() {
-  submit.disabled = !attended.checked || !document.querySelector(".pick:checked");
+  submit.disabled = !attended.checked || !document.querySelector(".pick:not(:disabled):checked");
 }
 
 attended.addEventListener("change", updateSubmit);
 results.addEventListener("change", updateSubmit);
 document.querySelector("#rescan").addEventListener("click", async () => {
-  results.innerHTML = `<section class="card empty"><h2>正在查找…</h2><p>会短暂打开后台标签页。</p></section>`;
+  results.innerHTML = `<section class="card empty"><h2>正在查找…</h2><p>会短暂打开后台标签页。Gmail / Ed / Moodle 完成后还会进行一次 Attendance 与 Moodle 表格最终核对。</p></section>`;
   await chrome.runtime.sendMessage({ type: "SCAN_ALL" });
   await render();
   updateSubmit();
 });
 submit.addEventListener("click", async () => {
   const { latestScan } = await chrome.storage.local.get("latestScan");
-  const selectedIds = new Set([...document.querySelectorAll(".pick:checked")].map((input) => input.dataset.id));
-  const items = latestScan.items.filter((item) => selectedIds.has(item.id));
+  const selectedIds = new Set([...document.querySelectorAll(".pick:not(:disabled):checked")].map((input) => input.dataset.id));
+  const items = latestScan.items.filter((item) => !item.completed && item.confidence !== "completed" && selectedIds.has(item.id));
+  if (!items.length) {
+    document.querySelector("#submitStatus").textContent = "没有需要提交的签到记录。已签到课程不会重复提交。";
+    updateSubmit();
+    return;
+  }
   submit.disabled = true;
   document.querySelector("#submitStatus").textContent = `正在提交 ${items.length} 条，请不要关闭新打开的 Attendance 标签页…`;
   const response = await chrome.runtime.sendMessage({ type: "SUBMIT_CODES", items });
