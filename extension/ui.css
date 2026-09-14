@@ -44,6 +44,9 @@ button:disabled { opacity:.45; cursor:not-allowed; }
 #scanList a { color:inherit; }
 .scan-ok { color:#2f6f3e; }
 .scan-failed { color:#9c2f24; }
+#scanList details { margin-top:4px; }
+#scanList summary { cursor:pointer; color:var(--muted); }
+.excerpt { max-height:320px; overflow:auto; white-space:pre-wrap; font-size:12px; background:#f7f9fc; padding:8px 10px; border-radius:8px; color:#334; }
 .actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
 .empty { text-align:center; padding:30px 12px; }
 #status { min-height:24px; font-weight:650; }

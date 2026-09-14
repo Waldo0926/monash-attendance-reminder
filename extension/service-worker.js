@@ -68,11 +68,11 @@ function sessionName(label, course) {
 
 // Opens a page in a background tab, lets content.js wait for it to finish rendering,
 // and returns its visible text plus every link on it. Never throws.
-async function readPage(url, { maxMs } = {}) {
+async function readPage(url, { maxMs, waitFor, minMs } = {}) {
   const tab = await chrome.tabs.create({ url, active: false });
   try {
     await waitForLoaded(tab.id);
-    const page = await chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE", maxMs });
+    const page = await chrome.tabs.sendMessage(tab.id, { type: "READ_PAGE", maxMs, waitFor, minMs });
     if (page.loginRequired) throw new Error("需要重新登录");
     return { ok: true, url, text: page.text || "", links: page.links || [], gmailThreads: page.gmailThreads || [] };
   } catch (error) {
@@ -150,33 +150,36 @@ async function automaticSourceScans(items, settings) {
   const gmailTabs = await chrome.tabs.query({ url: "https://mail.google.com/*" });
   const gmailBase = gmailTabs[0]?.url?.match(/^(https:\/\/mail\.google\.com\/mail\/u\/\d+\/)/)?.[1] || "https://mail.google.com/mail/u/0/";
   const query = `(${codes.join(" OR ")}) attendance newer_than:21d`;
-  const search = await scan(`${gmailBase}#search/${encodeURIComponent(query)}`, { maxMs: 20000 });
+  // The search query already restricts results to these units + "attendance", so open
+  // every result rather than re-filtering by row text: rows exist in the DOM before
+  // their text is painted, and a title filter on unpainted rows drops everything.
+  const search = await scan(`${gmailBase}#search/${encodeURIComponent(query)}`, { maxMs: 25000, waitFor: "tr.zA, [data-legacy-thread-id]", minMs: 2000 });
   if (search?.ok) {
-    const threads = new Map();
-    for (const thread of search.gmailThreads) if (!threads.has(thread.id)) threads.set(thread.id, thread.label);
-    const wanted = [...threads.entries()].filter(([, label]) => /attendance|code/i.test(label)).slice(0, 6);
-    for (const [id] of wanted) await scan(`${gmailBase}#all/${id}`, { maxMs: 15000 });
+    const ids = [...new Set(search.gmailThreads.map((thread) => thread.id))].slice(0, 8);
+    for (const id of ids) await scan(`${gmailBase}#all/${id}`, { maxMs: 20000, waitFor: "div[role='listitem'], .a3s", minMs: 1500 });
   }
 
-  const edDashboard = await scan("https://edstem.org/au/dashboard");
+  const edDashboard = await scan("https://edstem.org/au/dashboard", { waitFor: "a[href*='/courses/']" });
   const edCourses = findCourseLinks(edDashboard?.links, codes, {
     hrefPattern: /\/courses\/\d+/,
     normaliseHref: (href) => href.replace(/(\/courses\/\d+).*$/, "$1/discussion")
   });
   for (const course of edCourses.slice(0, 8)) {
-    const list = await scan(course.href);
+    const list = await scan(course.href, { waitFor: "a[href*='/discussion/']" });
     if (!list?.ok) continue;
-    for (const threadUrl of edThreadLinks(list.links)) await scan(threadUrl);
+    // The thread body renders after the list; give it a floor so we don't read a page
+    // that has the sidebar painted but the post itself still loading.
+    for (const threadUrl of edThreadLinks(list.links)) await scan(threadUrl, { maxMs: 12000, minMs: 3000 });
   }
 
-  const myUnits = await scan("https://learning.monash.edu/my/courses.php");
+  const myUnits = await scan("https://learning.monash.edu/my/courses.php", { maxMs: 15000, waitFor: "a[href*='course/view.php?id=']" });
   const moodleCourses = findCourseLinks(myUnits?.links, codes, {
     hrefPattern: /\/course\/view\.php\?id=\d+/,
     normaliseHref: (href) => href.replace(/(\/course\/view\.php\?id=\d+).*$/, "$1")
   });
   const itemDates = [...new Set(items.map((item) => item.attendanceDate?.iso).filter(Boolean))];
   for (const course of moodleCourses.slice(0, 8)) {
-    const home = await scan(course.href);
+    const home = await scan(course.href, { waitFor: "a[href*='section']" });
     if (!home?.ok) continue;
     const weekOneMonday = settings.weekOneMonday || detectWeekOneMonday(home.text);
     const targetWeeks = weekOneMonday
@@ -250,7 +253,16 @@ async function scanAll(reason = "manual") {
     // Keep only a summary of each scan: full page text for a dozen pages would blow past
     // chrome.storage.local's quota and make the whole save fail silently.
     const scans = sourceScans.map(({ ok, url, error, text, links, gmailThreads }) => ({
-      ok, url, error, textLength: (text || "").length, linkCount: (links || []).length, threadCount: (gmailThreads || []).length
+      ok,
+      url,
+      error,
+      textLength: (text || "").length,
+      linkCount: (links || []).length,
+      threadCount: (gmailThreads || []).length,
+      // How many 5-char letter+digit tokens the page had at all: zero on a page that
+      // visibly shows a code table means the table isn't text (image, canvas, iframe).
+      codeLikeCount: ((text || "").match(/\b(?=[A-Z0-9]{5}\b)(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*\d)[A-Z0-9]{5}\b/g) || []).length,
+      excerpt: (text || "").slice(0, 20000)
     }));
     const result = { reason, mode: "attendance-discovery", week: null, scannedAt: new Date().toISOString(), items, scans, discoveryErrors: discovered.errors };
     await chrome.storage.local.set({ latestScan: result });

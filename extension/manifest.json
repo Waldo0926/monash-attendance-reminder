@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Monash Attendance Helper",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Discover recent classes from Monash Attendance, find codes in Gmail/Moodle/Ed, and submit only after confirmation.",
   "permissions": ["alarms", "notifications", "storage", "tabs", "scripting"],
   "host_permissions": [

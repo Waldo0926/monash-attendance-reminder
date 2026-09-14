@@ -16,14 +16,20 @@ function sleep(ms) {
 // betting on one fixed sleep that's either too short for a slow render or wastefully long
 // for a fast one, poll the page's text length until it stops changing (or give up after
 // maxMs) before reading anything out of the DOM.
-async function waitForStablePage(maxMs = 8000, stableMs = 700, intervalMs = 200) {
+async function waitForStablePage({ maxMs = 8000, stableMs = 700, intervalMs = 200, waitFor = "", minMs = 0 } = {}) {
+  const start = Date.now();
+  // "Text stopped changing" is also true while a spinner is spinning. When the caller
+  // knows what the page's real content looks like (Gmail rows, Moodle unit cards, Ed
+  // thread links), wait for that to exist first, then wait for the text to settle.
+  if (waitFor) {
+    while (Date.now() - start < maxMs && !document.querySelector(waitFor)) await sleep(intervalMs);
+  }
   let last = null;
   let stableSince = Date.now();
-  const start = Date.now();
   while (Date.now() - start < maxMs) {
     const current = document.body.innerText.length;
     if (current === last) {
-      if (Date.now() - stableSince >= stableMs) return;
+      if (Date.now() - stableSince >= stableMs && Date.now() - start >= minMs) return;
     } else {
       last = current;
       stableSince = Date.now();
@@ -55,7 +61,7 @@ function findSubmitButton(input) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "READ_PAGE") {
-    waitForStablePage(message.maxMs || 8000).then(() => {
+    waitForStablePage({ maxMs: message.maxMs || 8000, waitFor: message.waitFor || "", minMs: message.minMs || 0 }).then(() => {
       const links = [...document.querySelectorAll("a[href]")].map((link) => ({
         label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
         href: link.href
