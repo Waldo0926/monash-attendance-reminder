@@ -67,9 +67,6 @@ export function normalise(value) {
 
 const MONTH_NAMES_RE = "jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec";
 
-// Moodle unit pages print the Week 1 date range in their own header
-// ("Week 1 ... Mon 27 July 26 - Sun 2 Aug 26"), which is enough to work out the
-// current teaching week without asking the student to type it in.
 export function detectWeekOneMonday(text) {
   const re = new RegExp(`\\bweek\\s*1\\b[\\s\\S]{0,400}?\\b(\\d{1,2})\\s+(${MONTH_NAMES_RE})[a-z]*\\.?,?\\s+(\\d{4}|\\d{2})\\b`, "i");
   const match = re.exec(String(text || ""));
@@ -93,9 +90,6 @@ export function scopedAttendanceItems(items, courseHints) {
     .filter(({ item }) => allowed.has(normalise(item.course)));
 }
 
-// Return only course codes that are actually printed in the supplied title/text.
-// Using a literal token extractor avoids a subtle RegExp-construction bug where `\b`
-// accidentally became a backspace character in a template string.
 export function courseCodesInText(text, courseCodes) {
   const allowed = new Map((courseCodes || []).map((code) => [String(code).toUpperCase(), String(code)]));
   const seen = new Set(String(text || "").toUpperCase().match(/\b[A-Z]{3}\d{4}\b/g) || []);
@@ -117,8 +111,6 @@ export function findCourseLinks(links, courseCodes, { hrefPattern, normaliseHref
   return [...seen.entries()].map(([href, courses]) => ({ href, courses }));
 }
 
-// Ed only shows thread titles in the discussion list; the code table lives inside
-// the thread body, so pick the threads worth opening by title.
 export function edThreadLinks(links) {
   const seen = new Map();
   for (const link of links || []) {
@@ -138,8 +130,6 @@ export function edThreadLinks(links) {
     .slice(0, 2);
 }
 
-// Moodle unit pages link each teaching week to its own section page; codes are
-// posted inside the week's section, not on the unit home page.
 export function moodleWeekLinks(links) {
   const byWeek = new Map();
   for (const link of links || []) {
@@ -160,10 +150,6 @@ export function pickWeekNumbers(available, targetWeeks) {
     const wanted = weeks.filter((week) => targets.some((target) => Math.abs(week - target) <= 1));
     if (wanted.length) return wanted;
   }
-  // Never walk an entire semester just because Week 1 could not be inferred. Apart from
-  // being slow, that used to make Chrome visibly open the same Moodle unit over and over
-  // (one tab per historical section) and OCR dozens of unrelated images. Five sections is
-  // a bounded last-resort fallback; the normal path below supplies exact week hints.
   return weeks.slice(0, 5);
 }
 
@@ -278,10 +264,6 @@ function lineHasMatchingTime(line, targetTime) {
   return tokens.some((token) => normaliseTimeToken(token) === targetTime);
 }
 
-// In staff tables the session/group number is the final standalone 1–2 digit token
-// before the time: `Tutorial Friday, 11 Sep 06 2:00PM ...`.  Extracting it explicitly
-// lets us reject a same-day/same-time row for a different group instead of scoring it
-// as a high-confidence match (e.g. Tutorial 05 must never accept Tutorial 06's X9JJB).
 function explicitRowSessionNumbers(row) {
   const value = String(row || "");
   const timeFinder = new RegExp(TIME_TOKEN_RE.source, "gi");
@@ -297,11 +279,6 @@ function explicitRowSessionNumbers(row) {
   const beforeNumbers = [...beforeDate.matchAll(/\b(\d{1,2})\b/g)].map((match) => Number(match[1]));
   const afterNumbers = [...afterDate.matchAll(/\b(\d{1,2})\b/g)].map((match) => Number(match[1]));
   const candidates = new Set();
-  // Staff posts appear in both forms:
-  //   Workshop 12 Tuesday 8 Sep 12:00PM ...
-  //   Workshop Tuesday, 8 Sep 01 4:00PM ...
-  // The group is therefore either the final small integer before the date or the first
-  // small integer after it.  The date itself has already been removed from both slices.
   if (beforeNumbers.length) candidates.add(beforeNumbers.at(-1));
   if (afterNumbers.length) candidates.add(afterNumbers[0]);
   return candidates;
@@ -312,20 +289,8 @@ export function matchCodesToAttendance(text, attendanceItems) {
   const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const codeRe = /\b(?=[A-Z0-9]{5}\b)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5}\b/g;
 
-  // OCR frequently turns one visual table row into several physical text lines, e.g.
-  //   Workshop / Tuesday, 8 Sep / 01 / 4:00PM / JY4H6
-  // Scoring only the literal line containing JY4H6 therefore loses the type/date/time.
-  // Reconstruct a small row block from the nearest session-type boundary, but stop before
-  // the next type/code so evidence from a neighbouring tutorial cannot bleed across rows.
   function rowBlock(lineIndex, codeIndex = -1) {
     const current = lines[lineIndex] || "";
-
-    // Browser-rendered Ed text sometimes flattens several visual table rows onto one
-    // physical DOM line, for example:
-    //   Workshop Monday ... TREW9 · Workshop Wednesday ... SQP3R · Workshop Wednesday ...
-    // If we score that whole line, the group-number guard sees the *first* row's 01 and
-    // wrongly rejects Workshop 02.  Isolate the session-type slice that actually contains
-    // this code before falling back to the multi-line OCR reconstruction below.
     if (codeIndex >= 0) {
       const typeFinder = new RegExp(SESSION_TYPE_RE.source, "gi");
       const starts = [...current.matchAll(typeFinder)].map((match) => match.index ?? -1).filter((index) => index >= 0);
@@ -369,10 +334,6 @@ export function matchCodesToAttendance(text, attendanceItems) {
     }
   });
 
-  // OCR may insert whitespace inside a five-character code ("JY4 H6" / "JY 4H6").
-  // Recover those only inside a session row that also carries a date/time, so ordinary
-  // phrases such as "Sep 01" cannot become fake attendance codes. Splitting on each
-  // session-type word also works when several visual rows were flattened onto one line.
   const typeSource = "workshop|tutorial|studio|applied(?: class)?|practical|laboratory|lab|seminar";
   const segments = clean.split(new RegExp(`(?=\\b(?:${typeSource})\\b)`, "i")).map((part) => part.trim()).filter(Boolean);
   const spacedCodeRe = /\b[A-Z0-9]{1,4}(?:[ \t]+[A-Z0-9]{1,4})+\b/g;
@@ -382,9 +343,6 @@ export function matchCodesToAttendance(text, attendanceItems) {
     const times = [...segment.matchAll(timeFinder)];
     timeFinder.lastIndex = 0;
     if (!times.length) continue;
-
-    // A code is printed after the row's time. Restrict whitespace-repair to that tail so
-    // date/session fields such as "Sep 01 4:00PM" cannot be accidentally concatenated.
     const lastTime = times.at(-1);
     const tail = segment.slice((lastTime.index || 0) + lastTime[0].length).trim();
     for (const match of tail.matchAll(spacedCodeRe)) {
@@ -393,13 +351,7 @@ export function matchCodesToAttendance(text, attendanceItems) {
       if (!/^(?=[A-Z0-9]{5}$)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5}$/.test(compact)) continue;
       if (/^(FIT|ECE|ENG|MMA|TRC)\d$/i.test(compact)) continue;
       if (hits.some((hit) => hit.code === compact && normalise(hit.row).includes(normalise(segment).slice(0, 40)))) continue;
-      hits.push({
-        code: compact,
-        line: segment,
-        row: segment,
-        lineIndex: -1,
-        context: segment.slice(0, 1200)
-      });
+      hits.push({ code: compact, line: segment, row: segment, lineIndex: -1, context: segment.slice(0, 1200) });
     }
   }
 
@@ -407,40 +359,17 @@ export function matchCodesToAttendance(text, attendanceItems) {
     const course = normalise(item.course);
     const sessionAliases = [item.session, ...(item.aliases || [])].map(normalise).filter(Boolean);
     const dateTokens = [item.attendanceDate?.iso, item.attendanceDate?.key?.replaceAll("_", " ")].map(normalise).filter(Boolean);
-    // Real Monash attendance-code postings list one session per line as
-    // "<Type> <Date> <Number> <Time> <Code>", with the date sitting between the type
-    // word and the session number. That means "Workshop 02" never appears as one
-    // contiguous phrase, so a substring check against the session label alone misses
-    // every real posting. The type word plus the exact time Attendance itself reported
-    // for this session is a far more reliable, position-independent signal.
     const sessionType = SESSION_TYPE_RE.exec(item.session || "")?.[1]?.toLowerCase();
     const itemTime = normaliseTimeToken(item.time);
     const typeRe = sessionType ? new RegExp(`\\b${sessionType}\\b`, "i") : null;
-    // "9_Sep_26" -> matches "9 Sep" / "9 September" / "Sep 9" on the same line. A line that
-    // carries some other date is an old or future week's posting for the same slot and must
-    // lose to the right week, even though its type and time look identical.
     const dateParts = String(item.attendanceDate?.key || "").split("_");
     const lineDateRe = dateParts.length === 3
       ? new RegExp(`\\b${Number(dateParts[0])}\\s+${dateParts[1]}[a-z]*\\b|\\b${dateParts[1]}[a-z]*\\s+${Number(dateParts[0])}\\b`, "i")
       : null;
-    // "Workshop 02" -> the standalone number 02/2, but never the hour of a time or the day of a date.
     const sessionNumber = /\b(\d{1,2})\b/.exec(item.session || "")?.[1];
     const numberRe = sessionNumber
       ? new RegExp(`\\b0*${Number(sessionNumber)}\\b(?![:\\d])(?!\\s*(?:${MONTH_NAMES_RE}))`, "i")
       : null;
-    // Some staff tables omit Allocate+ group numbers entirely. Exact date + type + time is
-    // still safe when this Attendance list has only one class in that slot; otherwise the
-    // missing group number must remain a manual-review match.
-    const slotPeers = attendanceItems.filter((other) => {
-      const otherCourse = normalise(other.course);
-      const otherType = SESSION_TYPE_RE.exec(other.session || "")?.[1]?.toLowerCase();
-      const otherTime = normaliseTimeToken(other.time);
-      return otherCourse === course
-        && otherType === sessionType
-        && otherTime === itemTime
-        && String(other.attendanceDate?.key || "") === String(item.attendanceDate?.key || "");
-    }).length;
-    const exactSlotUnique = slotPeers === 1;
 
     const ranked = hits.map((hit) => {
       const context = normalise(hit.context);
@@ -457,7 +386,6 @@ export function matchCodesToAttendance(text, attendanceItems) {
       const hasType = Boolean(typeRe?.test(row));
       const hasTime = lineHasMatchingTime(row, itemTime);
       const hasDate = Boolean(lineDateRe?.test(row));
-      const rowHasAnyDate = Boolean(ANY_DATE_RE.test(row));
       const explicitNumbers = explicitRowSessionNumbers(row);
       const hasNumber = Boolean(sessionNumber)
         ? (explicitNumbers.size
@@ -465,37 +393,26 @@ export function matchCodesToAttendance(text, attendanceItems) {
           : Boolean(numberRe?.test((itemTime || lineDateRe) ? row : line)))
         : false;
       const numberConflict = Boolean(sessionNumber && explicitNumbers.size && !hasNumber);
-      const dateConflict = Boolean(lineDateRe && rowHasAnyDate && !hasDate);
-      const dateMissing = Boolean(lineDateRe && !rowHasAnyDate);
+      const dateConflict = Boolean(lineDateRe && ANY_DATE_RE.test(row) && !hasDate);
+      const dateMissing = Boolean(lineDateRe && !ANY_DATE_RE.test(row));
 
       if (hasType && hasTime) score += 26;
       else if (hasTime) score += 8;
       if (lineDateRe) {
-        if (hasDate) score += 14;
-        else if (dateConflict) score -= 100;
-        else if (dateMissing) score -= 12;
+        if (hasDate) score += 10;
+        else if (dateConflict) score -= 80;
       }
       if (numberConflict) score -= 80;
       else if (hasNumber) score += 8;
-      // If OCR dropped the word "Workshop" but preserved the exact date, time and session
-      // number, those three independent fields still uniquely identify the Attendance row.
       if (hasDate && hasTime && hasNumber) score += 12;
-      return {
-        ...hit,
-        score,
-        numberConflict,
-        dateConflict,
-        dateVerified: !lineDateRe || hasDate,
-        numberVerified: !sessionNumber || hasNumber,
-        exactSlotUnique
-      };
+      return { ...hit, score, numberConflict, dateConflict, dateMissing, numberVerified: !sessionNumber || hasNumber };
     });
-    return ranked.filter((hit) => !hit.numberConflict && !hit.dateConflict && hit.score >= 24);
+    // Auto-discovered Attendance rows always carry an exact calendar date. A Gmail/Ed/Moodle
+    // candidate that lost that date cannot safely be distinguished from another week's class
+    // at the same weekday/time, so refuse it instead of guessing from a broader search window.
+    return ranked.filter((hit) => !hit.numberConflict && !hit.dateConflict && !hit.dateMissing && hit.score >= 24);
   });
 
-  // A real signed code belongs to exactly one class, so hand each code to the single
-  // item that wants it most. If two items want the same code equally, neither gets it:
-  // that pattern means the match came from shared surrounding text, not a real code.
   const claims = candidates
     .flatMap((hits, index) => hits.map((hit) => ({ index, ...hit })))
     .sort((a, b) => b.score - a.score);
@@ -510,11 +427,10 @@ export function matchCodesToAttendance(text, attendanceItems) {
 
   return attendanceItems.map((item, index) => {
     const best = assigned.get(index);
-    const numberSafe = best && (best.numberVerified || (best.dateVerified && best.exactSlotUnique));
     return {
       ...item,
       code: best ? best.code : "",
-      confidence: best ? (best.score >= 36 && best.dateVerified && numberSafe ? "high" : "review") : "missing",
+      confidence: best ? (best.score >= 36 && best.numberVerified ? "high" : "review") : "missing",
       context: best ? best.context.slice(0, 520) : ""
     };
   });
