@@ -8,7 +8,7 @@ import {
   teachingWeek
 } from "./shared.js";
 
-const FALLBACK_VERSION = 1;
+const FALLBACK_VERSION = 2;
 let fallbackRunning = false;
 
 function pause(ms) {
@@ -105,28 +105,73 @@ function courseFullyResolved(result, course) {
 function identifyCourse(page, candidates) {
   const fromTitle = courseCodesInText(page?.title || "", candidates);
   if (fromTitle.length === 1) return String(fromTitle[0]).toUpperCase();
-  const fromBody = courseCodesInText((page?.text || "").slice(0, 16000), candidates);
+  const fromBody = courseCodesInText((page?.text || "").slice(0, 20000), candidates);
   return fromBody.length === 1 ? String(fromBody[0]).toUpperCase() : "";
 }
 
-function moodleCourseCandidates(links) {
-  const seen = new Set();
-  const result = [];
+function moodleCourseCandidates(links, wantedCourses = []) {
+  const seen = new Map();
+  const wanted = wantedCourses.map((course) => String(course).toUpperCase());
+  let order = 0;
+
   for (const link of links || []) {
     try {
       const url = new URL(link.href);
       if (url.hostname !== "learning.monash.edu" || url.pathname !== "/course/view.php") continue;
       const id = url.searchParams.get("id");
       if (!/^\d+$/.test(id || "")) continue;
+
       const href = `${url.origin}${url.pathname}?id=${id}`;
-      if (seen.has(href)) continue;
-      seen.add(href);
-      result.push({ href, clue: `${link.label || ""} ${link.context || ""}`.trim() });
+      const clue = `${link.label || ""} ${link.context || ""}`.replace(/\s+/g, " ").trim();
+      const courses = courseCodesInText(clue, wanted).map((course) => String(course).toUpperCase());
+      const existing = seen.get(href);
+
+      if (!existing) {
+        seen.set(href, { href, clue, courses, order: order++ });
+      } else {
+        const merged = [...new Set([...existing.courses, ...courses])];
+        if (merged.length > existing.courses.length || clue.length > existing.clue.length) {
+          seen.set(href, {
+            ...existing,
+            clue: clue.length > existing.clue.length ? clue : existing.clue,
+            courses: merged
+          });
+        }
+      }
     } catch {
       // Ignore malformed links from page chrome.
     }
   }
-  return result;
+
+  // Critical: target course cards must be scanned before unrelated cards. The old
+  // implementation examined only the first 16 course links, so a course such as TRC2001
+  // near the bottom of My units was silently skipped even though its card was visible.
+  return [...seen.values()].sort((a, b) => {
+    const aMatch = a.courses.length ? 1 : 0;
+    const bMatch = b.courses.length ? 1 : 0;
+    return bMatch - aMatch || a.order - b.order;
+  });
+}
+
+function mergeCourseCandidates(groups) {
+  const seen = new Map();
+  for (const candidate of groups.flat()) {
+    const existing = seen.get(candidate.href);
+    if (!existing) {
+      seen.set(candidate.href, candidate);
+      continue;
+    }
+    seen.set(candidate.href, {
+      ...existing,
+      clue: candidate.clue.length > existing.clue.length ? candidate.clue : existing.clue,
+      courses: [...new Set([...existing.courses, ...candidate.courses])]
+    });
+  }
+  return [...seen.values()].sort((a, b) => {
+    const aMatch = a.courses.length ? 1 : 0;
+    const bMatch = b.courses.length ? 1 : 0;
+    return bMatch - aMatch || a.order - b.order;
+  });
 }
 
 function attendanceActivityCandidates(page) {
@@ -149,7 +194,7 @@ function attendanceActivityCandidates(page) {
       // Ignore malformed activity links.
     }
   }
-  return [...seen.values()].sort((a, b) => b.score - a.score).slice(0, 4);
+  return [...seen.values()].sort((a, b) => b.score - a.score).slice(0, 6);
 }
 
 function applyMatches(result, page, course) {
@@ -184,12 +229,11 @@ function targetWeeksForCourse(home, result, course, settings) {
     .map((item) => item.attendanceDate)
     .filter(Boolean);
   const weekOneMonday = settings?.weekOneMonday || detectWeekOneMonday(home.text);
-  let targets = weekOneMonday
+  return weekOneMonday
     ? [...new Set(courseDates
       .map((date) => teachingWeek({ weekOneMonday }, new Date(`${date.iso}T12:00:00`)))
       .filter(Number.isFinite))]
     : inferWeekNumbersFromText(home.text, courseDates);
-  return targets;
 }
 
 async function scanAttendanceActivities(result, page, course, scans) {
@@ -202,6 +246,35 @@ async function scanAttendanceActivities(result, page, course, scans) {
     applyMatches(result, activityPage, course);
     if (courseFullyResolved(result, course)) return;
   }
+}
+
+async function readMoodleCourseIndexes(initialUnresolved, scans) {
+  const myUnits = await readPage("https://learning.monash.edu/my/courses.php", {
+    maxMs: 16000,
+    waitFor: "a[href*='course/view.php?id=']",
+    minMs: 1000
+  });
+  scans.push(scanSummary(myUnits, []));
+  if (!myUnits.ok) return { ok: false, error: myUnits.error || "无法读取 Moodle My units", candidates: [] };
+
+  const groups = [moodleCourseCandidates(myUnits.links, initialUnresolved)];
+  const found = new Set(groups[0].flatMap((candidate) => candidate.courses));
+  const missing = initialUnresolved.filter((course) => !found.has(course));
+
+  // Moodle deployments differ: some accounts expose all course cards on /my/courses.php,
+  // others render a richer set on /my/. Only read the dashboard when a target course card
+  // was not identified on My units, then merge both sources by course URL.
+  if (missing.length) {
+    const dashboard = await readPage("https://learning.monash.edu/my/", {
+      maxMs: 16000,
+      waitFor: "a[href*='course/view.php?id=']",
+      minMs: 1000
+    });
+    scans.push(scanSummary(dashboard, []));
+    if (dashboard.ok) groups.push(moodleCourseCandidates(dashboard.links, initialUnresolved));
+  }
+
+  return { ok: true, candidates: mergeCourseCandidates(groups) };
 }
 
 async function enrichWithMoodle(latestScan) {
@@ -219,40 +292,38 @@ async function enrichWithMoodle(latestScan) {
 
   const { settings } = await chrome.storage.local.get("settings");
   const fallbackScans = [];
-  const myUnits = await readPage("https://learning.monash.edu/my/courses.php", {
-    maxMs: 16000,
-    waitFor: "a[href*='course/view.php?id=']",
-    minMs: 1000
-  });
-  fallbackScans.push(scanSummary(myUnits, []));
-  if (!myUnits.ok) {
+  const indexResult = await readMoodleCourseIndexes(initialUnresolved, fallbackScans);
+  if (!indexResult.ok) {
     result.scans.push(...fallbackScans);
     result.moodleFallback = {
       version: FALLBACK_VERSION,
       status: "failed",
-      error: myUnits.error || "无法读取 Moodle My units",
+      error: indexResult.error,
       completedAt: new Date().toISOString()
     };
     return result;
   }
 
-  const candidates = moodleCourseCandidates(myUnits.links);
   let recognised = 0;
-  for (const candidate of candidates.slice(0, 16)) {
+  for (const candidate of indexResult.candidates) {
     const stillNeeded = unresolvedCourses(result);
     if (!stillNeeded.length) break;
 
+    const hinted = candidate.courses.filter((course) => stillNeeded.includes(course));
+    // Once all explicitly labelled target cards have been handled, unrelated generic cards
+    // are only needed as a compatibility fallback for Moodle themes that hide the course
+    // code from the card label. There is deliberately no arbitrary "first N" cutoff.
     const home = await readPage(candidate.href, {
       maxMs: 15000,
       waitFor: "a[href*='section']",
       minMs: 1000
     });
     if (!home.ok) {
-      fallbackScans.push(scanSummary(home, []));
+      fallbackScans.push(scanSummary(home, hinted));
       continue;
     }
 
-    const course = identifyCourse(home, stillNeeded);
+    const course = hinted.length === 1 ? hinted[0] : identifyCourse(home, stillNeeded);
     if (!course) continue;
     recognised += 1;
     fallbackScans.push(scanSummary(home, [course]));
@@ -265,7 +336,7 @@ async function enrichWithMoodle(latestScan) {
     const exact = targets.length ? available.filter((week) => targets.includes(week)) : [];
     const selected = exact.length ? exact : pickWeekNumbers(available, targets);
 
-    for (const week of selected.slice(0, 5)) {
+    for (const week of selected.slice(0, 6)) {
       const href = weekLinks.get(week);
       if (!href) continue;
       const section = await readPage(href, { maxMs: 15000, minMs: 1200 });
