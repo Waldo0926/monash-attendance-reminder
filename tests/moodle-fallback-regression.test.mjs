@@ -21,6 +21,6 @@ test("Moodle fallback can inspect both My units and Dashboard when target cards 
   assert.match(fallback, /mergeCourseCandidates/);
 });
 
-test("extension version includes deterministic Moodle/Attendance reconciliation", () => {
-  assert.equal(manifest.version, "1.3.19");
+test("extension version includes explicit deterministic reconciliation v2", () => {
+  assert.equal(manifest.version, "1.3.20");
 });
