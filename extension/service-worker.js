@@ -1,4 +1,5 @@
 import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, matchCodesToAttendance, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek } from "./shared.js";
+import { gmailSearchBounds, pickGmailBase, prioritiseGmailThreads } from "./gmail-source.js";
 
 const PRIMARY_ALARM = "attendance-primary";
 const BACKUP_ALARM = "attendance-backup";
@@ -297,29 +298,44 @@ async function automaticSourceScans(items, settings) {
     return page;
   };
 
+  // Gmail can have several signed-in accounts open at once. Prefer the active/recent account
+  // instead of blindly using /u/0, and search before the actual class dates because many
+  // units publish Week N attendance codes several days in advance.
   const gmailTabs = await chrome.tabs.query({ url: "https://mail.google.com/*" });
-  const gmailBase = gmailTabs[0]?.url?.match(/^(https:\/\/mail\.google\.com\/mail\/u\/\d+\/)/)?.[1] || "https://mail.google.com/mail/u/0/";
-  const itemDates = [...new Set(items.map((item) => item.attendanceDate?.iso).filter(Boolean))].sort();
-  const after = itemDates[0]?.replaceAll("-", "/");
-  const beforeDate = itemDates.length ? new Date(`${itemDates.at(-1)}T12:00:00`) : new Date();
-  beforeDate.setDate(beforeDate.getDate() + 3);
-  const before = `${beforeDate.getFullYear()}/${String(beforeDate.getMonth() + 1).padStart(2, "0")}/${String(beforeDate.getDate()).padStart(2, "0")}`;
-  const query = `(${codes.join(" OR ")}) attendance${after ? ` after:${after} before:${before}` : " newer_than:14d"}`;
-  // The search query already restricts results to these units + "attendance", so open
-  // every result rather than re-filtering by row text: rows exist in the DOM before
-  // their text is painted, and a title filter on unpainted rows drops everything.
+  const gmailBase = pickGmailBase(gmailTabs);
+  const { after, before } = gmailSearchBounds(items);
+  const query = `(${codes.join(" OR ")}) attendance${after && before ? ` after:${after} before:${before}` : " newer_than:21d"}`;
   const search = await scan(`${gmailBase}#search/${encodeURIComponent(query)}`, { maxMs: 25000, waitFor: "tr.zA, [data-legacy-thread-id]", minMs: 2000 });
   if (search?.ok) {
-    const ids = [...new Set(search.gmailThreads.map((thread) => thread.id))].slice(0, 8);
-    for (const id of ids) await scan(`${gmailBase}#all/${id}`, { maxMs: 20000, waitFor: "div[role='listitem'], .a3s", minMs: 1500 });
+    // The old eight-message cap was enough for one or two FIT units, but it starved other
+    // courses on accounts with many engineering attendance announcements. Rank exact code
+    // messages first, reserve candidates across every detected course, then stop as soon as
+    // every Attendance row is confidently resolved.
+    const threads = prioritiseGmailThreads(search.gmailThreads, codes, 24);
+    for (const thread of threads) {
+      const resolved = confidentlyResolvedCourses(scans, items);
+      if (resolved.size >= codes.length) break;
+      const threadCourses = courseCodesInText(thread.label || "", codes).map((code) => code.toLowerCase());
+      if (threadCourses.length && threadCourses.every((course) => resolved.has(course))) continue;
+      await scan(`${gmailBase}#all/${thread.id}`, {
+        maxMs: 20000,
+        waitFor: "div[role='listitem'], .a3s",
+        minMs: 1500,
+        courses: threadCourses
+      });
+    }
   }
+
+  const gmailResolved = confidentlyResolvedCourses(scans, items);
+  if (gmailResolved.size >= codes.length) return scans;
+  const edCodes = codes.filter((code) => !gmailResolved.has(code.toLowerCase()));
 
   const edDashboard = await scan("https://edstem.org/au/dashboard", { waitFor: "a[href*='/courses/']" });
   // Open Ed tabs are useful fallback hints: their titles often contain FITxxxx even when
   // the dashboard's clickable anchor contains only an icon or a short course nickname.
   const openEdTabs = await chrome.tabs.query({ url: "https://edstem.org/au/courses/*" });
   const edHints = openEdTabs.map((tab) => ({ label: tab.title || "", context: tab.title || "", href: tab.url || "" }));
-  const edCourses = findCourseLinks([...(edDashboard?.links || []), ...edHints], codes, {
+  const edCourses = findCourseLinks([...(edDashboard?.links || []), ...edHints], edCodes, {
     hrefPattern: /\/courses\/\d+/,
     normaliseHref: (href) => href.replace(/(\/courses\/\d+).*$/, "$1/discussion")
   });
