@@ -10,7 +10,7 @@ async function refresh() {
     return;
   }
   const found = latestScan.items.filter((item) => item.code).length;
-  summary.textContent = `Week ${latestScan.week} · 找到 ${found}/${latestScan.items.length} 个`;
+  summary.textContent = `Week ${latestScan.week ?? "—"} · 找到 ${found}/${latestScan.items.length} 个`;
   detail.textContent = `上次检查：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")}`;
 }
 
@@ -24,4 +24,9 @@ scanButton.addEventListener("click", async () => {
 });
 document.querySelector("#review").addEventListener("click", () => chrome.runtime.sendMessage({ type: "OPEN_REVIEW" }));
 document.querySelector("#settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes.latestScan) refresh().catch(() => {});
+});
+
 refresh();

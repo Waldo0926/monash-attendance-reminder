@@ -41,6 +41,7 @@ document.querySelector("#rescan").addEventListener("click", async () => {
   results.innerHTML = `<section class="card empty"><h2>正在查找…</h2><p>会短暂打开后台标签页。</p></section>`;
   await chrome.runtime.sendMessage({ type: "SCAN_ALL" });
   await render();
+  updateSubmit();
 });
 submit.addEventListener("click", async () => {
   const { latestScan } = await chrome.storage.local.get("latestScan");
@@ -52,4 +53,10 @@ submit.addEventListener("click", async () => {
   const successes = response.outcomes?.filter((item) => item.ok).length || 0;
   document.querySelector("#submitStatus").textContent = `已处理 ${successes}/${items.length} 条。请在 Attendance 页面核对成功提示和最终出勤率。`;
 });
-render();
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.latestScan) return;
+  render().then(updateSubmit).catch(() => {});
+});
+
+render().then(updateSubmit);

@@ -33,3 +33,27 @@ test("Moodle weekly pages follow same-origin attendance activities one level dee
   assert.match(source, /cells\.join\(" \\| "\)/);
   assert.match(source, /linkedMoodleAttendanceText/);
 });
+
+test("Moodle fallback opens unlabeled My units cards before resolving course ownership", async () => {
+  const source = await text("moodle-fallback.js");
+  assert.match(source, /moodleCourseCandidates/);
+  assert.match(source, /course\/view\.php/);
+  assert.match(source, /identifyCourse/);
+  assert.match(source, /courseCodesInText/);
+  assert.match(source, /candidates\.slice\(0, 16\)/);
+});
+
+test("Moodle fallback follows the attendance activity and rematches exact Attendance rows", async () => {
+  const source = await text("moodle-fallback.js");
+  assert.match(source, /attendanceActivityCandidates/);
+  assert.match(source, /\\\/mod\\\/\[\^\/\]\+\\\/view/);
+  assert.match(source, /international\\s\+student/);
+  assert.match(source, /scanAttendanceActivities/);
+  assert.match(source, /matchCodesToAttendance/);
+});
+
+test("background wrapper keeps both the original worker and Moodle fallback active", async () => {
+  const wrapper = await text("service-worker-wrapper.js");
+  assert.match(wrapper, /moodle-fallback\.js/);
+  assert.match(wrapper, /service-worker\.js/);
+});
