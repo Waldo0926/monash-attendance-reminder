@@ -247,7 +247,9 @@ export function extractCandidates(text, course, week) {
 
 const SESSION_TYPE_RE = /\b(workshop|tutorial|studio|applied(?: class)?|practical|laboratory|lab|seminar)\b/i;
 const TIME_TOKEN_RE = /\b(\d{1,2}):(\d{2})\s*([ap])\.?m\.?\b/gi;
-const ANY_DATE_RE = new RegExp(`\\b\\d{1,2}\\s+(?:${MONTH_NAMES_RE})[a-z]*\\b|\\b(?:${MONTH_NAMES_RE})[a-z]*\\s+\\d{1,2}\\b`, "i");
+// The month-first alternative explicitly refuses a colon after the day token. Without
+// that guard, a row such as "15 Sep 8:00AM" could be misread as the target date "Sep 8".
+const ANY_DATE_RE = new RegExp(`\\b\\d{1,2}\\s+(?:${MONTH_NAMES_RE})[a-z]*\\b|\\b(?:${MONTH_NAMES_RE})[a-z]*\\s+\\d{1,2}\\b(?!\\s*:)`, "i");
 
 export function normaliseTimeToken(value) {
   TIME_TOKEN_RE.lastIndex = 0;
@@ -291,6 +293,12 @@ export function matchCodesToAttendance(text, attendanceItems) {
 
   function rowBlock(lineIndex, codeIndex = -1) {
     const current = lines[lineIndex] || "";
+
+    // Browser-rendered Ed text sometimes flattens several visual table rows onto one
+    // physical DOM line, for example:
+    //   Workshop Monday ... TREW9 · Workshop Wednesday ... SQP3R · Workshop Wednesday ...
+    // If we score that whole line, the group-number guard sees the first row's number and
+    // can reject the correct later row. Isolate the session-type slice containing this code.
     if (codeIndex >= 0) {
       const typeFinder = new RegExp(SESSION_TYPE_RE.source, "gi");
       const starts = [...current.matchAll(typeFinder)].map((match) => match.index ?? -1).filter((index) => index >= 0);
@@ -364,7 +372,7 @@ export function matchCodesToAttendance(text, attendanceItems) {
     const typeRe = sessionType ? new RegExp(`\\b${sessionType}\\b`, "i") : null;
     const dateParts = String(item.attendanceDate?.key || "").split("_");
     const lineDateRe = dateParts.length === 3
-      ? new RegExp(`\\b${Number(dateParts[0])}\\s+${dateParts[1]}[a-z]*\\b|\\b${dateParts[1]}[a-z]*\\s+${Number(dateParts[0])}\\b`, "i")
+      ? new RegExp(`\\b${Number(dateParts[0])}\\s+${dateParts[1]}[a-z]*\\b|\\b${dateParts[1]}[a-z]*\\s+${Number(dateParts[0])}\\b(?!\\s*:)`, "i")
       : null;
     const sessionNumber = /\b(\d{1,2})\b/.exec(item.session || "")?.[1];
     const numberRe = sessionNumber
