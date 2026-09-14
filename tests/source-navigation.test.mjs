@@ -34,40 +34,31 @@ test("Moodle weekly pages follow same-origin attendance activities one level dee
   assert.match(source, /linkedMoodleAttendanceText/);
 });
 
-test("Moodle fallback opens target My units cards without truncating late-listed units", async () => {
-  const source = await text("moodle-fallback.js");
-  assert.match(source, /moodleCourseCandidates/);
-  assert.match(source, /course\/view\.php/);
-  assert.match(source, /identifyCourse/);
-  assert.match(source, /courseCodesInText/);
-  assert.doesNotMatch(source, /candidates\.slice\(0, 16\)/);
-  assert.match(source, /bMatch - aMatch/);
-});
-
-test("Moodle fallback follows the attendance activity and rematches exact Attendance rows", async () => {
-  const source = await text("moodle-fallback.js");
-  assert.match(source, /attendanceActivityCandidates/);
-  assert.match(source, /\\\/mod\\\/\[\^\/\]\+\\\/view/);
-  assert.match(source, /international\\s\+student/);
-  assert.match(source, /scanAttendanceActivities/);
-  assert.match(source, /matchCodesToAttendance/);
-});
-
-test("background wrapper keeps the normal scanner, Moodle fallback and final reconciliation active", async () => {
+test("background wrapper uses the normal scanner plus explicit reconciliation v2 only", async () => {
   const wrapper = await text("service-worker-wrapper.js");
-  assert.match(wrapper, /moodle-fallback\.js/);
   assert.match(wrapper, /service-worker\.js/);
-  assert.match(wrapper, /reconciliation\.js/);
+  assert.match(wrapper, /reconciliation-v2\.js/);
+  assert.doesNotMatch(wrapper, /moodle-fallback\.js/);
+  assert.doesNotMatch(wrapper, /reconciliation\.js/);
 });
 
-test("final reconciliation reads completed Attendance rows and exact Moodle table cells", async () => {
-  const source = await text("reconciliation.js");
-  const core = await text("reconciliation-core.js");
+test("manual review explicitly awaits final reconciliation before rendering", async () => {
   const review = await text("review.js");
-  assert.match(source, /extractAttendancePortalRows/);
-  assert.match(source, /extractMoodleTableRows/);
-  assert.match(source, /matchStructuredAttendanceRows/);
+  const scan = review.indexOf('type: "SCAN_ALL"');
+  const reconcile = review.indexOf('type: "RUN_FINAL_RECONCILIATION"');
+  const finalRender = review.indexOf("await render();", reconcile);
+  assert.ok(scan >= 0 && reconcile > scan && finalRender > reconcile);
+  assert.match(review, /reconciliation\?\.version !== 2/);
+});
+
+test("reconciliation v2 parses every Moodle candidate page and preserves completed Attendance rows", async () => {
+  const source = await text("reconciliation-v2.js");
+  const core = await text("reconciliation-core.js");
+  assert.match(source, /extractAttendanceRows/);
+  assert.match(source, /extractMoodleEvidence/);
+  assert.match(source, /mergeRows\(result, course, evidence\.rows/);
+  assert.match(source, /RUN_FINAL_RECONCILIATION/);
+  assert.match(source, /Promise\.all\(dates\.map/);
   assert.match(core, /mergePortalAttendance/);
-  assert.match(review, /status\.key === "completed"/);
-  assert.match(review, /\.pick:not\(:disabled\):checked/);
+  assert.match(core, /matchStructuredAttendanceRows/);
 });
