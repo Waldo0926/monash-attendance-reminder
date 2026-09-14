@@ -34,12 +34,12 @@ test("Moodle weekly pages follow same-origin attendance activities one level dee
   assert.match(source, /linkedMoodleAttendanceText/);
 });
 
-test("background wrapper uses the normal scanner plus explicit reconciliation v2 only", async () => {
+test("background wrapper uses the normal scanner plus explicit reconciliation v3 only", async () => {
   const wrapper = await text("service-worker-wrapper.js");
   assert.match(wrapper, /service-worker\.js/);
-  assert.match(wrapper, /reconciliation-v2\.js/);
+  assert.match(wrapper, /reconciliation-v3\.js/);
   assert.doesNotMatch(wrapper, /moodle-fallback\.js/);
-  assert.doesNotMatch(wrapper, /reconciliation\.js/);
+  assert.doesNotMatch(wrapper, /reconciliation-v2\.js/);
 });
 
 test("manual review explicitly awaits final reconciliation before rendering", async () => {
@@ -48,17 +48,33 @@ test("manual review explicitly awaits final reconciliation before rendering", as
   const reconcile = review.indexOf('type: "RUN_FINAL_RECONCILIATION"');
   const finalRender = review.indexOf("await render();", reconcile);
   assert.ok(scan >= 0 && reconcile > scan && finalRender > reconcile);
-  assert.match(review, /reconciliation\?\.version !== 2/);
+  assert.match(review, /reconciliation\?\.version !== 3/);
 });
 
-test("reconciliation v2 parses every Moodle candidate page and preserves completed Attendance rows", async () => {
-  const source = await text("reconciliation-v2.js");
+test("reconciliation v3 tolerates never-complete pages and reads Attendance sequentially", async () => {
+  const source = await text("reconciliation-v3.js");
+  assert.match(source, /waitForUsableDocument/);
+  assert.match(source, /state\.readyState !== "loading"/);
+  assert.doesNotMatch(source, /status !== "complete"/);
+  assert.doesNotMatch(source, /Promise\.all\(dates\.map/);
+  assert.match(source, /for \(const date of recentDates\(lookbackDays\)\)/);
+});
+
+test("reconciliation v3 reads known Moodle candidates before falling back to My units", async () => {
+  const source = await text("reconciliation-v3.js");
+  const candidate = source.indexOf("const queue = courseCandidateUrls(result, course)");
+  const fallback = source.indexOf("if (!queue.length)", candidate);
+  const discover = source.indexOf("discoverCourseRoot(course)", fallback);
+  assert.ok(candidate >= 0 && fallback > candidate && discover > fallback);
+  assert.match(source, /attendanceLinks/);
+  assert.match(source, /mergeRows\(result, course, evidence\.rows/);
+});
+
+test("reconciliation v3 preserves completed Attendance rows through the shared merge", async () => {
+  const source = await text("reconciliation-v3.js");
   const core = await text("reconciliation-core.js");
   assert.match(source, /extractAttendanceRows/);
-  assert.match(source, /extractMoodleEvidence/);
-  assert.match(source, /mergeRows\(result, course, evidence\.rows/);
   assert.match(source, /RUN_FINAL_RECONCILIATION/);
-  assert.match(source, /Promise\.all\(dates\.map/);
   assert.match(core, /mergePortalAttendance/);
   assert.match(core, /matchStructuredAttendanceRows/);
 });
