@@ -76,9 +76,17 @@ export function prioritiseGmailThreads(threads = [], courseCodes = [], limit = 2
 
   // Fairness matters more than a pure global ranking: when several units share one Gmail
   // account, one noisy unit must not consume every slot before another unit's attendance
-  // code email is opened. Reserve up to four strong candidates per course first.
-  for (const code of courseCodes || []) {
-    unique.filter((thread) => thread._courses.includes(code)).slice(0, 4).forEach(add);
+  // code email is opened. Round-robin the best four candidates for each course first, so a
+  // small global limit still gives every detected course a chance.
+  const perCourse = new Map((courseCodes || []).map((code) => [
+    code,
+    unique.filter((thread) => thread._courses.includes(code)).slice(0, 4)
+  ]));
+  for (let round = 0; round < 4 && selected.length < limit; round += 1) {
+    for (const code of courseCodes || []) {
+      add(perCourse.get(code)?.[round]);
+      if (selected.length >= limit) break;
+    }
   }
   unique.forEach(add);
 
