@@ -1,3 +1,2 @@
-import "./moodle-fallback.js";
 import "./service-worker.js";
-import "./reconciliation.js";
+import "./reconciliation-v2.js";
