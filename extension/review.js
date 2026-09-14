@@ -99,9 +99,7 @@ submit.addEventListener("click", async () => {
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || !changes.latestScan) return;
   const next = changes.latestScan.newValue;
-  // During a manual scan, do not replace the explicit "正在最终核对" state with the
-  // intermediate one-code result. The rescan handler renders only after v2 finishes.
-  if (next?.reason === "manual" && next?.mode === "attendance-discovery" && next?.reconciliation?.version !== 2) return;
+  if (next?.reason === "manual" && next?.mode === "attendance-discovery" && next?.reconciliation?.version !== 3) return;
   render().then(updateSubmit).catch(() => {});
 });
 
