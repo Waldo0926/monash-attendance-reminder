@@ -42,7 +42,7 @@ test("rejects an explicitly different week's date even when type and time match"
   assert.equal(result.confidence, "missing");
 });
 
-test("does not promote a numberless row when two attendance groups share the exact slot", () => {
+test("leaves a numberless row unassigned when two attendance groups share the exact slot", () => {
   const items = [
     week7Workshop,
     { ...week7Workshop, session: "Workshop 02" }
@@ -51,6 +51,8 @@ test("does not promote a numberless row when two attendance groups share the exa
     "ENG2005 Week 7 Attendance Code\nWorkshop Tuesday, 8 Sep 8:00AM ADDKB",
     items
   );
-  assert.equal(results[0].confidence, "review");
+  assert.equal(results[0].code, "");
+  assert.equal(results[0].confidence, "missing");
+  assert.equal(results[1].code, "");
   assert.equal(results[1].confidence, "missing");
 });
