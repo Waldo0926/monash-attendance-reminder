@@ -21,6 +21,6 @@ test("Moodle fallback can inspect both My units and Dashboard when target cards 
   assert.match(fallback, /mergeCourseCandidates/);
 });
 
-test("extension version includes the Moodle course-card priority fix", () => {
-  assert.equal(manifest.version, "1.3.18");
+test("extension version includes deterministic Moodle/Attendance reconciliation", () => {
+  assert.equal(manifest.version, "1.3.19");
 });
