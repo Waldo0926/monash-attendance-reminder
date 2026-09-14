@@ -34,13 +34,14 @@ test("Moodle weekly pages follow same-origin attendance activities one level dee
   assert.match(source, /linkedMoodleAttendanceText/);
 });
 
-test("Moodle fallback opens unlabeled My units cards before resolving course ownership", async () => {
+test("Moodle fallback opens target My units cards without truncating late-listed units", async () => {
   const source = await text("moodle-fallback.js");
   assert.match(source, /moodleCourseCandidates/);
   assert.match(source, /course\/view\.php/);
   assert.match(source, /identifyCourse/);
   assert.match(source, /courseCodesInText/);
-  assert.match(source, /candidates\.slice\(0, 16\)/);
+  assert.doesNotMatch(source, /candidates\.slice\(0, 16\)/);
+  assert.match(source, /bMatch - aMatch/);
 });
 
 test("Moodle fallback follows the attendance activity and rematches exact Attendance rows", async () => {
@@ -52,8 +53,21 @@ test("Moodle fallback follows the attendance activity and rematches exact Attend
   assert.match(source, /matchCodesToAttendance/);
 });
 
-test("background wrapper keeps both the original worker and Moodle fallback active", async () => {
+test("background wrapper keeps the normal scanner, Moodle fallback and final reconciliation active", async () => {
   const wrapper = await text("service-worker-wrapper.js");
   assert.match(wrapper, /moodle-fallback\.js/);
   assert.match(wrapper, /service-worker\.js/);
+  assert.match(wrapper, /reconciliation\.js/);
+});
+
+test("final reconciliation reads completed Attendance rows and exact Moodle table cells", async () => {
+  const source = await text("reconciliation.js");
+  const core = await text("reconciliation-core.js");
+  const review = await text("review.js");
+  assert.match(source, /extractAttendancePortalRows/);
+  assert.match(source, /extractMoodleTableRows/);
+  assert.match(source, /matchStructuredAttendanceRows/);
+  assert.match(core, /mergePortalAttendance/);
+  assert.match(review, /status\.key === "completed"/);
+  assert.match(review, /\.pick:not\(:disabled\):checked/);
 });
