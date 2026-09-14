@@ -1,2 +1,2 @@
 import "./service-worker.js";
-import "./reconciliation-v2.js";
+import "./reconciliation-v3.js";
