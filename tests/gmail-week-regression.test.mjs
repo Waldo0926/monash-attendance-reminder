@@ -21,16 +21,16 @@ test("prefers the exact ENG2005 Week 7 date over an undated same-slot newer emai
 
   const [result] = matchCodesToAttendance(text, [week7Workshop]);
   assert.equal(result.code, "ADDKB");
-  assert.equal(result.confidence, "high");
+  assert.equal(result.confidence, "review");
 });
 
-test("keeps an undated same-slot Gmail candidate as manual review only", () => {
+test("rejects an undated same-slot Gmail candidate from another week", () => {
   const [result] = matchCodesToAttendance(
     "ENG2005 Week 8 Attendance Code\nWorkshop Tuesday 8:00AM 9RAH3",
     [week7Workshop]
   );
-  assert.equal(result.code, "9RAH3");
-  assert.equal(result.confidence, "review");
+  assert.equal(result.code, "");
+  assert.equal(result.confidence, "missing");
 });
 
 test("rejects an explicitly different week's date even when type and time match", () => {
