@@ -31,7 +31,7 @@ export function parseDateKey(key) {
 
 export function recentAttendanceDates(now = new Date(), count = 7) {
   const dates = [];
-  for (let offset = Math.max(1, count) - 1; offset >= 0; offset -= 1) {
+  for (let offset = Math.max(1, count); offset >= 0; offset -= 1) {
     dates.push(dateInfo(new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset, 12)));
   }
   return dates;
@@ -85,13 +85,31 @@ function stripHash(href) {
   return String(href || "").split("#")[0];
 }
 
+
+export function scopedAttendanceItems(items, courseHints) {
+  const allowed = new Set((courseHints || []).map((value) => normalise(value)).filter(Boolean));
+  if (!allowed.size) return (items || []).map((item, index) => ({ item, index }));
+  return (items || [])
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => allowed.has(normalise(item.course)));
+}
+
+// Return only course codes that are actually printed in the supplied title/text.
+// Using a literal token extractor avoids a subtle RegExp-construction bug where `\b`
+// accidentally became a backspace character in a template string.
+export function courseCodesInText(text, courseCodes) {
+  const allowed = new Map((courseCodes || []).map((code) => [String(code).toUpperCase(), String(code)]));
+  const seen = new Set(String(text || "").toUpperCase().match(/\b[A-Z]{3}\d{4}\b/g) || []);
+  return [...seen].filter((code) => allowed.has(code)).map((code) => allowed.get(code));
+}
+
 export function findCourseLinks(links, courseCodes, { hrefPattern, normaliseHref = (href) => href }) {
   const codes = (courseCodes || []).map((code) => String(code).toLowerCase());
   const seen = new Map();
   for (const link of links || []) {
     const raw = stripHash(link.href);
     if (!hrefPattern.test(raw)) continue;
-    const haystack = `${link.label} ${raw}`.toLowerCase();
+    const haystack = `${link.label} ${link.context || ""} ${raw}`.toLowerCase();
     const courses = codes.filter((code) => haystack.includes(code));
     if (!courses.length) continue;
     const href = normaliseHref(raw);
@@ -107,12 +125,18 @@ export function edThreadLinks(links) {
   for (const link of links || []) {
     const href = stripHash(link.href);
     if (!/\/discussion\/\d+/.test(href)) continue;
-    const label = String(link.label || "");
-    const priority = /attendance/i.test(label) ? 0 : /\bcodes?\b/i.test(label) ? 1 : /\bweek\s*\d+/i.test(label) ? 2 : -1;
-    if (priority < 0) continue;
-    if (!seen.has(href) || seen.get(href) > priority) seen.set(href, priority);
+    const label = `${link.label || ""} ${link.context || ""}`.trim();
+    const kind = /attendance/i.test(label) ? 0 : /\bcodes?\b/i.test(label) ? 1 : /\bweek\s*\d+/i.test(label) ? 2 : -1;
+    const week = Number(/\bweek\s*(\d{1,2})\b/i.exec(label)?.[1] || 0);
+    const priority = kind < 0 ? null : { kind, week };
+    if (!priority) continue;
+    const previous = seen.get(href);
+    if (!previous || priority.kind < previous.kind || (priority.kind === previous.kind && priority.week > previous.week)) seen.set(href, priority);
   }
-  return [...seen.entries()].sort((a, b) => a[1] - b[1]).map(([href]) => href).slice(0, 5);
+  return [...seen.entries()]
+    .sort((a, b) => a[1].kind - b[1].kind || b[1].week - a[1].week)
+    .map(([href]) => href)
+    .slice(0, 2);
 }
 
 // Moodle unit pages link each teaching week to its own section page; codes are
@@ -137,13 +161,56 @@ export function pickWeekNumbers(available, targetWeeks) {
     const wanted = weeks.filter((week) => targets.some((target) => Math.abs(week - target) <= 1));
     if (wanted.length) return wanted;
   }
-  return weeks.slice(0, 14);
+  // Never walk an entire semester just because Week 1 could not be inferred. Apart from
+  // being slow, that used to make Chrome visibly open the same Moodle unit over and over
+  // (one tab per historical section) and OCR dozens of unrelated images. Five sections is
+  // a bounded last-resort fallback; the normal path below supplies exact week hints.
+  return weeks.slice(0, 5);
+}
+
+export function inferWeekNumbersFromText(text, attendanceDates = []) {
+  const source = String(text || "");
+  if (!source) return [];
+
+  const targets = (attendanceDates || []).map((value) => {
+    const key = typeof value === "string" ? value : value?.key;
+    const parts = String(key || "").split("_");
+    if (parts.length !== 3) return null;
+    const day = Number(parts[0]);
+    const month = MONTH_ABBR.findIndex((name) => name.toLowerCase() === parts[1].slice(0, 3).toLowerCase());
+    if (!day || month < 0) return null;
+    return { day, month, ordinal: month * 32 + day };
+  }).filter(Boolean);
+
+  const weeks = [...source.matchAll(/\bweek\s*(\d{1,2})\b/gi)];
+  const found = new Set();
+  const dateRe = new RegExp(`\\b(\\d{1,2})\\s+(${MONTH_NAMES_RE})[a-z]*\\b`, "gi");
+
+  weeks.forEach((match, index) => {
+    const week = Number(match[1]);
+    const next = weeks[index + 1]?.index ?? Math.min(source.length, match.index + 700);
+    const nearby = source.slice(match.index, next);
+    const dates = [...nearby.matchAll(dateRe)].map((dateMatch) => {
+      const month = MONTH_ABBR.findIndex((name) => name.toLowerCase() === dateMatch[2].slice(0, 3).toLowerCase());
+      return month < 0 ? null : { day: Number(dateMatch[1]), month, ordinal: month * 32 + Number(dateMatch[1]) };
+    }).filter(Boolean);
+
+    if (dates.length >= 2) {
+      const low = Math.min(dates[0].ordinal, dates[1].ordinal);
+      const high = Math.max(dates[0].ordinal, dates[1].ordinal);
+      if (targets.some((target) => target.ordinal >= low && target.ordinal <= high)) found.add(week);
+      return;
+    }
+
+    if (dates.length === 1 && targets.some((target) => target.ordinal === dates[0].ordinal)) found.add(week);
+  });
+  return [...found].sort((a, b) => a - b);
 }
 
 export function extractCandidates(text, course, week) {
   const clean = text.replace(/\u00a0/g, " ").replace(/[\t ]+/g, " ");
   const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const codeRe = /\b(?=[A-Z0-9]{5}\b)(?=.*[A-Z])(?=.*\d)[A-Z0-9]{5}\b/g;
+  const codeRe = /\b(?=[A-Z0-9]{5}\b)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5}\b/g;
   const hits = [];
 
   lines.forEach((line, lineIndex) => {
@@ -193,7 +260,7 @@ export function extractCandidates(text, course, week) {
   });
 }
 
-const SESSION_TYPE_RE = /\b(workshop|tutorial|studio|applied class|practical|laboratory|lab|seminar)\b/i;
+const SESSION_TYPE_RE = /\b(workshop|tutorial|studio|applied(?: class)?|practical|laboratory|lab|seminar)\b/i;
 const TIME_TOKEN_RE = /\b(\d{1,2}):(\d{2})\s*([ap])\.?m\.?\b/gi;
 const ANY_DATE_RE = new RegExp(`\\b\\d{1,2}\\s+(?:${MONTH_NAMES_RE})[a-z]*\\b|\\b(?:${MONTH_NAMES_RE})[a-z]*\\s+\\d{1,2}\\b`, "i");
 
@@ -212,10 +279,83 @@ function lineHasMatchingTime(line, targetTime) {
   return tokens.some((token) => normaliseTimeToken(token) === targetTime);
 }
 
+// In staff tables the session/group number is the final standalone 1–2 digit token
+// before the time: `Tutorial Friday, 11 Sep 06 2:00PM ...`.  Extracting it explicitly
+// lets us reject a same-day/same-time row for a different group instead of scoring it
+// as a high-confidence match (e.g. Tutorial 05 must never accept Tutorial 06's X9JJB).
+function explicitRowSessionNumbers(row) {
+  const value = String(row || "");
+  const timeFinder = new RegExp(TIME_TOKEN_RE.source, "gi");
+  const time = timeFinder.exec(value);
+  if (!time) return new Set();
+  const prefix = value.slice(0, time.index);
+  const dateFinder = new RegExp(ANY_DATE_RE.source, "i");
+  const date = dateFinder.exec(prefix);
+  if (!date) return new Set();
+
+  const beforeDate = prefix.slice(0, date.index);
+  const afterDate = prefix.slice(date.index + date[0].length);
+  const beforeNumbers = [...beforeDate.matchAll(/\b(\d{1,2})\b/g)].map((match) => Number(match[1]));
+  const afterNumbers = [...afterDate.matchAll(/\b(\d{1,2})\b/g)].map((match) => Number(match[1]));
+  const candidates = new Set();
+  // Staff posts appear in both forms:
+  //   Workshop 12 Tuesday 8 Sep 12:00PM ...
+  //   Workshop Tuesday, 8 Sep 01 4:00PM ...
+  // The group is therefore either the final small integer before the date or the first
+  // small integer after it.  The date itself has already been removed from both slices.
+  if (beforeNumbers.length) candidates.add(beforeNumbers.at(-1));
+  if (afterNumbers.length) candidates.add(afterNumbers[0]);
+  return candidates;
+}
+
 export function matchCodesToAttendance(text, attendanceItems) {
   const clean = String(text || "").replace(/\u00a0/g, " ").replace(/[\t ]+/g, " ");
   const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const codeRe = /\b(?=[A-Z0-9]{5}\b)(?=.*[A-Z])(?=.*\d)[A-Z0-9]{5}\b/g;
+  const codeRe = /\b(?=[A-Z0-9]{5}\b)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5}\b/g;
+
+  // OCR frequently turns one visual table row into several physical text lines, e.g.
+  //   Workshop / Tuesday, 8 Sep / 01 / 4:00PM / JY4H6
+  // Scoring only the literal line containing JY4H6 therefore loses the type/date/time.
+  // Reconstruct a small row block from the nearest session-type boundary, but stop before
+  // the next type/code so evidence from a neighbouring tutorial cannot bleed across rows.
+  function rowBlock(lineIndex, codeIndex = -1) {
+    const current = lines[lineIndex] || "";
+
+    // Browser-rendered Ed text sometimes flattens several visual table rows onto one
+    // physical DOM line, for example:
+    //   Workshop Monday ... TREW9 · Workshop Wednesday ... SQP3R · Workshop Wednesday ...
+    // If we score that whole line, the group-number guard sees the *first* row's 01 and
+    // wrongly rejects Workshop 02.  Isolate the session-type slice that actually contains
+    // this code before falling back to the multi-line OCR reconstruction below.
+    if (codeIndex >= 0) {
+      const typeFinder = new RegExp(SESSION_TYPE_RE.source, "gi");
+      const starts = [...current.matchAll(typeFinder)].map((match) => match.index ?? -1).filter((index) => index >= 0);
+      const start = starts.filter((index) => index <= codeIndex).at(-1);
+      if (Number.isInteger(start)) {
+        const end = starts.find((index) => index > codeIndex) ?? current.length;
+        const local = current.slice(start, end).trim();
+        if (local) return local;
+      }
+    }
+
+    let start = lineIndex;
+    for (let index = lineIndex; index >= Math.max(0, lineIndex - 6); index -= 1) {
+      if (SESSION_TYPE_RE.test(lines[index])) {
+        start = index;
+        break;
+      }
+      if (index < lineIndex && (lines[index].match(codeRe) || []).length) break;
+    }
+
+    let end = lineIndex;
+    for (let index = lineIndex + 1; index < Math.min(lines.length, lineIndex + 7); index += 1) {
+      if (SESSION_TYPE_RE.test(lines[index])) break;
+      if ((lines[index].match(codeRe) || []).length) break;
+      end = index;
+    }
+    return lines.slice(start, end + 1).join(" ");
+  }
+
   const hits = [];
   lines.forEach((line, lineIndex) => {
     for (const match of line.matchAll(codeRe)) {
@@ -223,10 +363,46 @@ export function matchCodesToAttendance(text, attendanceItems) {
       hits.push({
         code: match[0].toUpperCase(),
         line,
+        row: rowBlock(lineIndex, match.index ?? -1),
+        lineIndex,
         context: lines.slice(Math.max(0, lineIndex - 7), Math.min(lines.length, lineIndex + 8)).join(" · ")
       });
     }
   });
+
+  // OCR may insert whitespace inside a five-character code ("JY4 H6" / "JY 4H6").
+  // Recover those only inside a session row that also carries a date/time, so ordinary
+  // phrases such as "Sep 01" cannot become fake attendance codes. Splitting on each
+  // session-type word also works when several visual rows were flattened onto one line.
+  const typeSource = "workshop|tutorial|studio|applied(?: class)?|practical|laboratory|lab|seminar";
+  const segments = clean.split(new RegExp(`(?=\\b(?:${typeSource})\\b)`, "i")).map((part) => part.trim()).filter(Boolean);
+  const spacedCodeRe = /\b[A-Z0-9]{1,4}(?:[ \t]+[A-Z0-9]{1,4})+\b/g;
+  const timeFinder = new RegExp(TIME_TOKEN_RE.source, "gi");
+  for (const segment of segments) {
+    if (!SESSION_TYPE_RE.test(segment) || !ANY_DATE_RE.test(segment)) continue;
+    const times = [...segment.matchAll(timeFinder)];
+    timeFinder.lastIndex = 0;
+    if (!times.length) continue;
+
+    // A code is printed after the row's time. Restrict whitespace-repair to that tail so
+    // date/session fields such as "Sep 01 4:00PM" cannot be accidentally concatenated.
+    const lastTime = times.at(-1);
+    const tail = segment.slice((lastTime.index || 0) + lastTime[0].length).trim();
+    for (const match of tail.matchAll(spacedCodeRe)) {
+      const raw = match[0];
+      const compact = raw.replace(/\s+/g, "");
+      if (!/^(?=[A-Z0-9]{5}$)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5}$/.test(compact)) continue;
+      if (/^(FIT|ECE|ENG|MMA|TRC)\d$/i.test(compact)) continue;
+      if (hits.some((hit) => hit.code === compact && normalise(hit.row).includes(normalise(segment).slice(0, 40)))) continue;
+      hits.push({
+        code: compact,
+        line: segment,
+        row: segment,
+        lineIndex: -1,
+        context: segment.slice(0, 1200)
+      });
+    }
+  }
 
   const candidates = attendanceItems.map((item) => {
     const course = normalise(item.course);
@@ -256,21 +432,41 @@ export function matchCodesToAttendance(text, attendanceItems) {
     const ranked = hits.map((hit) => {
       const context = normalise(hit.context);
       const line = normalise(hit.line);
+      const row = normalise(hit.row || hit.line);
       let score = 0;
       if (course && context.includes(course)) score += 14;
       if (course && line.includes(course)) score += 12;
       if (sessionAliases.some((alias) => context.includes(alias))) score += 14;
       if (sessionAliases.some((alias) => line.includes(alias))) score += 14;
+      else if ((itemTime || lineDateRe) && sessionAliases.some((alias) => row.includes(alias))) score += 14;
       if (dateTokens.some((token) => context.includes(token))) score += 4;
-      if (typeRe?.test(line) && lineHasMatchingTime(line, itemTime)) score += 26;
+
+      const hasType = Boolean(typeRe?.test(row));
+      const hasTime = lineHasMatchingTime(row, itemTime);
+      const hasDate = Boolean(lineDateRe?.test(row));
+      const explicitNumbers = explicitRowSessionNumbers(row);
+      const hasNumber = Boolean(sessionNumber)
+        ? (explicitNumbers.size
+          ? explicitNumbers.has(Number(sessionNumber))
+          : Boolean(numberRe?.test((itemTime || lineDateRe) ? row : line)))
+        : false;
+      const numberConflict = Boolean(sessionNumber && explicitNumbers.size && !hasNumber);
+      const dateConflict = Boolean(lineDateRe && ANY_DATE_RE.test(row) && !hasDate);
+
+      if (hasType && hasTime) score += 26;
+      else if (hasTime) score += 8;
       if (lineDateRe) {
-        if (lineDateRe.test(line)) score += 10;
-        else if (ANY_DATE_RE.test(line)) score -= 10;
+        if (hasDate) score += 10;
+        else if (dateConflict) score -= 80;
       }
-      if (numberRe?.test(line)) score += 6;
-      return { ...hit, score };
+      if (numberConflict) score -= 80;
+      else if (hasNumber) score += 8;
+      // If OCR dropped the word "Workshop" but preserved the exact date, time and session
+      // number, those three independent fields still uniquely identify the Attendance row.
+      if (hasDate && hasTime && hasNumber) score += 12;
+      return { ...hit, score, numberConflict, dateConflict, numberVerified: !sessionNumber || hasNumber };
     });
-    return ranked.filter((hit) => hit.score >= 24);
+    return ranked.filter((hit) => !hit.numberConflict && !hit.dateConflict && hit.score >= 24);
   });
 
   // A real signed code belongs to exactly one class, so hand each code to the single
@@ -293,7 +489,7 @@ export function matchCodesToAttendance(text, attendanceItems) {
     return {
       ...item,
       code: best ? best.code : "",
-      confidence: best ? (best.score >= 36 ? "high" : "review") : "missing",
+      confidence: best ? (best.score >= 36 && best.numberVerified ? "high" : "review") : "missing",
       context: best ? best.context.slice(0, 520) : ""
     };
   });

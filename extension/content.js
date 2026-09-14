@@ -59,13 +59,86 @@ function findSubmitButton(input) {
   return candidates.find((node) => /submit|enter|confirm|record|签到|提交/i.test(`${node.innerText || ""} ${node.value || ""} ${node.title || ""}`));
 }
 
+function snapshotImageAsPng(image) {
+  try {
+    if (!image.complete || !image.naturalWidth || !image.naturalHeight) return "";
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) return "";
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0);
+    // This intentionally throws for a cross-origin image without CORS permission. That is
+    // fine: ocr.js will then fetch the URL and use Chromium to decode/convert it there.
+    return canvas.toDataURL("image/png");
+  } catch {
+    return "";
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "READ_PAGE") {
     waitForStablePage({ maxMs: message.maxMs || 8000, waitFor: message.waitFor || "", minMs: message.minMs || 0 }).then(() => {
-      const links = [...document.querySelectorAll("a[href]")].map((link) => ({
-        label: (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim(),
-        href: link.href
-      })).filter((item) => item.label && item.href);
+      const links = [...document.querySelectorAll("a[href]")].map((link) => {
+        const label = (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim();
+        let context = label;
+        let parent = link.parentElement;
+        // Ed sometimes renders the course/thread title beside the clickable anchor rather
+        // than inside it. Keep a short nearby DOM context so discovery can still associate
+        // the URL with FITxxxx / "Attendance Codes" without swallowing the whole sidebar.
+        for (let depth = 0; parent && depth < 4; depth += 1, parent = parent.parentElement) {
+          const text = (parent.innerText || parent.textContent || "").replace(/\s+/g, " ").trim();
+          if (text && text.length <= 420) {
+            context = text;
+            if (text.length > label.length + 8) break;
+          }
+        }
+        return { label, context, href: link.href };
+      }).filter((item) => item.label && item.href);
+      const edDiscussionPage = location.hostname === "edstem.org" && /\/courses\/\d+\/discussion\/\d+/.test(location.pathname);
+      const minImageHeight = edDiscussionPage ? 20 : 60;
+      const minImageWidth = edDiscussionPage ? 180 : 240;
+      const images = [...document.images]
+        .filter((image) => (image.naturalWidth || image.width || 0) >= minImageWidth && (image.naturalHeight || image.height || 0) >= minImageHeight)
+        .map((image) => {
+          const src = image.currentSrc || image.src;
+          let context = image.alt || "";
+          let parent = image.parentElement;
+          for (let depth = 0; parent && depth < 3; depth += 1, parent = parent.parentElement) {
+            const text = (parent.innerText || parent.textContent || "").replace(/\s+/g, " ").trim();
+            if (text && text.length <= 360) {
+              context = text;
+              if (/attendance|code|workshop|tutorial|studio|week\s*\d+/i.test(text)) break;
+            }
+          }
+          return {
+            src,
+            alt: image.alt || "",
+            context,
+            width: image.naturalWidth || image.width || 0,
+            height: image.naturalHeight || image.height || 0,
+            // blob: URLs are tied to the live Ed page and may be unusable after readPage
+            // closes its background tab. Snapshot those ephemeral images before closing.
+            dataUrl: src.startsWith("blob:") ? snapshotImageAsPng(image) : ""
+          };
+        }).filter((image) => image.src);
+      // Ed can render a very short one-row attachment (for example the FIT2102 Workshop
+      // row) in a wrapper where the <img> is lazy/undersized while the attachment href is
+      // already present. Add direct edusercontent attachment links as OCR fallbacks so a
+      // single-line code image cannot disappear merely because its rendered thumbnail is
+      // shorter than the general image threshold.
+      if (edDiscussionPage) {
+        const known = new Set(images.map((image) => image.src));
+        for (const anchor of document.querySelectorAll("a[href*='edusercontent.com/files/']")) {
+          const src = anchor.href;
+          if (!src || known.has(src)) continue;
+          const text = (anchor.closest("article, [role='article'], div")?.innerText || anchor.innerText || "").replace(/\s+/g, " ").trim().slice(0, 360);
+          images.push({ src, alt: anchor.getAttribute("aria-label") || "", context: text, width: 1200, height: 40, dataUrl: "", attachmentFallback: true });
+          known.add(src);
+        }
+      }
       // Gmail's message list has no <a href> per message; each row carries the thread id
       // as a data attribute instead, and that id is enough to open the thread by URL.
       const gmailThreads = location.hostname === "mail.google.com"
@@ -83,6 +156,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         url: location.href,
         text: visibleText().slice(0, 750000),
         links,
+        images,
         gmailThreads,
         loginRequired: /login|sign in|log in|okta/i.test(document.title + " " + location.href)
       });

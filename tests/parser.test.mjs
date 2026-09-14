@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, matchCodesToAttendance, moodleWeekLinks, normaliseTimeToken, parseDateKey, pickWeekNumbers, recentAttendanceDates, teachingWeek } from "../extension/shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, matchCodesToAttendance, moodleWeekLinks, normaliseTimeToken, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek } from "../extension/shared.js";
 
 test("ships with a blank per-user course configuration", () => {
   assert.deepEqual(DEFAULT_SETTINGS.courses, []);
@@ -9,10 +9,11 @@ test("ships with a blank per-user course configuration", () => {
   assert.equal(teachingWeek(DEFAULT_SETTINGS, new Date("2026-09-13T12:00:00+08:00")), null);
 });
 
-test("builds a seven-day Attendance discovery window without a timetable", () => {
+test("builds an inclusive seven-day-old Attendance discovery window without a timetable", () => {
   const dates = recentAttendanceDates(new Date("2026-09-13T12:00:00+08:00"), 7);
-  assert.equal(dates[0].iso, "2026-09-07");
-  assert.equal(dates[6].iso, "2026-09-13");
+  assert.equal(dates[0].iso, "2026-09-06");
+  assert.equal(dates.at(-1).iso, "2026-09-13");
+  assert.equal(dates.length, 8);
 });
 
 test("matches a Gmail code to a class discovered from Attendance", () => {
@@ -136,6 +137,18 @@ test("picks Ed threads worth opening by title, attendance first", () => {
   ]);
 });
 
+test("prefers the newest attendance-code week and limits expensive OCR pages", () => {
+  const links = [
+    { label: "Week 5 Attendance Codes", href: "https://edstem.org/au/courses/1/discussion/5" },
+    { label: "Week 7 Attendance Codes", href: "https://edstem.org/au/courses/1/discussion/7" },
+    { label: "Week 6 Attendance Codes", href: "https://edstem.org/au/courses/1/discussion/6" }
+  ];
+  assert.deepEqual(edThreadLinks(links), [
+    "https://edstem.org/au/courses/1/discussion/7",
+    "https://edstem.org/au/courses/1/discussion/6"
+  ]);
+});
+
 test("maps Moodle week links to section pages and narrows them to the current week", () => {
   const links = [
     { label: "Week 1 - Introduction to Unit", href: "https://learning.monash.edu/course/view.php?id=44555#section-12" },
@@ -216,4 +229,158 @@ test("does not accept a code without a matching class label", () => {
   const [result] = extractCandidates("Week 7 general notice X1Y2Z", course, 7);
   assert.equal(result.code, "");
   assert.equal(result.confidence, "missing");
+});
+
+
+test("finds Ed course URLs when the FIT code is in nearby link context", () => {
+  const links = [
+    { label: "Open", context: "FIT2102 Functional Programming", href: "https://edstem.org/au/courses/36340/lessons" },
+    { label: "Open", context: "Other course", href: "https://edstem.org/au/courses/99999/lessons" }
+  ];
+  const found = findCourseLinks(links, ["FIT2102"], {
+    hrefPattern: /\/courses\/\d+/,
+    normaliseHref: (href) => href.replace(/(\/courses\/\d+).*$/, "$1/discussion")
+  });
+  assert.deepEqual(found, [{ href: "https://edstem.org/au/courses/36340/discussion", courses: ["fit2102"] }]);
+});
+
+test("finds Ed attendance threads when the title is in nearby link context", () => {
+  const links = [
+    { label: "#565", context: "Week 7 International Students Attendance Codes #565", href: "https://edstem.org/au/courses/36340/discussion/3574203" }
+  ];
+  assert.deepEqual(edThreadLinks(links), ["https://edstem.org/au/courses/36340/discussion/3574203"]);
+});
+
+test("accepts five-letter attendance codes with no digits", () => {
+  const items = [
+    { course: "FIT2102", session: "Tutorial 09", time: "2:00 pm", attendanceDate: { iso: "2026-09-09", key: "9_Sep_26" } }
+  ];
+  const text = "Tutorial Wednesday, 9 Sep 09 2:00PM JKAHX";
+  const [result] = matchCodesToAttendance(text, items);
+  assert.equal(result.code, "JKAHX");
+  assert.equal(result.confidence, "high");
+});
+
+test("matches the real FIT2102 Week 7 workshop and tutorial rows", () => {
+  const items = [
+    { course: "FIT2102", session: "Workshop 01", time: "4:00 pm", attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" } },
+    { course: "FIT2102", session: "Tutorial 09", time: "2:00 pm", attendanceDate: { iso: "2026-09-09", key: "9_Sep_26" } }
+  ];
+  const text = [
+    "Workshop Tuesday, 8 Sep 01 4:00PM JY4H6",
+    "Tutorial Wednesday, 9 Sep 01 8:00AM GTXUE",
+    "Tutorial Wednesday, 9 Sep 02 10:00AM ND77R",
+    "Tutorial Wednesday, 9 Sep 09 2:00PM JKAHX"
+  ].join("\n");
+  const [workshop, tutorial] = matchCodesToAttendance(text, items);
+  assert.equal(workshop.code, "JY4H6");
+  assert.equal(tutorial.code, "JKAHX");
+});
+
+
+test("matches a FIT2102 workshop row when OCR splits the visual row across lines", () => {
+  const items = [
+    { course: "FIT2102", session: "Workshop 01", time: "4:00 pm", attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" } },
+    { course: "FIT2102", session: "Tutorial 09", time: "2:00 pm", attendanceDate: { iso: "2026-09-09", key: "9_Sep_26" } }
+  ];
+  const text = [
+    "Week 7 International Students Attendance Codes",
+    "Workshop",
+    "Tuesday, 8 Sep",
+    "01",
+    "4:00PM",
+    "JY4H6",
+    "Tutorial Wednesday, 9 Sep 09 2:00PM JKAHX"
+  ].join("\n");
+  const [workshop, tutorial] = matchCodesToAttendance(text, items);
+  assert.equal(workshop.code, "JY4H6");
+  assert.equal(workshop.confidence, "high");
+  assert.equal(tutorial.code, "JKAHX");
+});
+
+test("can infer a Moodle teaching week from a date range around its Week heading", () => {
+  const text = "Week 6 31 August - 6 September Week 7 7 September - 13 September Week 8 14 September - 20 September";
+  const dates = [{ key: "8_Sep_26" }, { key: "9_Sep_26" }];
+  assert.deepEqual(inferWeekNumbersFromText(text, dates), [7]);
+});
+
+test("Moodle fallback never scans an entire semester", () => {
+  assert.deepEqual(pickWeekNumbers([1,2,3,4,5,6,7,8,9,10,11,12], []), [12,11,10,9,8]);
+});
+
+
+test("recovers a five-character code when OCR inserts whitespace inside it", () => {
+  const items = [
+    { course: "FIT2102", session: "Workshop 01", time: "4:00 pm", attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" } }
+  ];
+  const text = "Workshop Tuesday, 8 Sep 01 4:00PM JY4 H6";
+  const [result] = matchCodesToAttendance(text, items);
+  assert.equal(result.code, "JY4H6");
+  assert.equal(result.confidence, "high");
+});
+
+
+test("seven-day lookback includes the activity exactly seven days ago", () => {
+  const dates = recentAttendanceDates(new Date(2026, 8, 14, 20, 0, 0), 7);
+  assert.equal(dates[0].iso, "2026-09-07");
+  assert.equal(dates.at(-1).iso, "2026-09-14");
+  assert.equal(dates.length, 8);
+});
+
+test("matches bare Applied activity labels as a session type", () => {
+  const item = { course: "FIT2102", session: "Applied 01", time: "8:00 am", attendanceDate: { iso: "2026-09-07", key: "7_Sep_26" } };
+  const text = "Applied Monday, 7 Sep 01 8:00AM AP1CD";
+  const [matched] = matchCodesToAttendance(text, [item]);
+  assert.equal(matched.code, "AP1CD");
+});
+
+
+test("matches a workshop row when Ed flattens several visual rows onto one physical line", () => {
+  const text = "Passcode: 3PfFh8!t · Workshop Monday, 7 Sep 01 6:00PM TREW9 · Workshop Wednesday, 9 Sep 02 4:00PM SQP3R · Workshop Wednesday, 9 Sep 03_OnlineRealTime 4:00PM QQKZQ";
+  const item = { course: "FIT2109", session: "Workshop 02", time: "4:00 pm", attendanceDate: { iso: "2026-09-09", key: "9_Sep_26" } };
+  const [matched] = matchCodesToAttendance(text, [item]);
+  assert.equal(matched.code, "SQP3R");
+  assert.equal(matched.confidence, "high");
+});
+
+test("keeps exact tutorial groups separated even when Ed flattens them onto one line", () => {
+  const text = "Tutorial Friday, 11 Sep 05 2:00PM ZS9CR · Tutorial Friday, 11 Sep 06 2:00PM X9JJB";
+  const items = [
+    { course: "FIT2109", session: "Tutorial 05", time: "2:00 pm", attendanceDate: { iso: "2026-09-11", key: "11_Sep_26" } },
+    { course: "FIT2102", session: "Tutorial 06", time: "2:00 pm", attendanceDate: { iso: "2026-09-11", key: "11_Sep_26" } }
+  ];
+  const [tutorial05, tutorial06] = matchCodesToAttendance(text, items);
+  assert.equal(tutorial05.code, "ZS9CR");
+  assert.equal(tutorial06.code, "X9JJB");
+});
+
+test("course-scopes source pages before matching attendance rows", () => {
+  const items = [
+    { course: "FIT2102", session: "Tutorial 06", time: "2:00 pm", attendanceDate: { iso: "2026-09-11", key: "11_Sep_26" } },
+    { course: "FIT2109", session: "Tutorial 05", time: "2:00 pm", attendanceDate: { iso: "2026-09-11", key: "11_Sep_26" } }
+  ];
+  const scoped = scopedAttendanceItems(items, ["fit2102"]);
+  assert.deepEqual(scoped.map(({ index }) => index), [0]);
+  const [matched] = matchCodesToAttendance("Tutorial Friday, 11 Sep 06 2:00PM X9JJB", scoped.map(({ item }) => item));
+  assert.equal(matched.code, "X9JJB");
+});
+
+test("rejects a same-day same-time code from the wrong tutorial number", () => {
+  const item = { course: "FIT2109", session: "Tutorial 05", time: "2:00 pm", attendanceDate: { iso: "2026-09-11", key: "11_Sep_26" } };
+  const [matched] = matchCodesToAttendance("Tutorial Friday, 11 Sep 06 2:00PM X9JJB", [item]);
+  assert.equal(matched.code, "");
+  assert.equal(matched.confidence, "missing");
+});
+
+test("still accepts the exact tutorial number on the same date and time", () => {
+  const item = { course: "FIT2102", session: "Tutorial 06", time: "2:00 pm", attendanceDate: { iso: "2026-09-11", key: "11_Sep_26" } };
+  const [matched] = matchCodesToAttendance("Tutorial Friday, 11 Sep 06 2:00PM X9JJB", [item]);
+  assert.equal(matched.code, "X9JJB");
+  assert.equal(matched.confidence, "high");
+});
+
+
+test("extracts literal course ownership from an Ed page title", () => {
+  assert.deepEqual(courseCodesInText("FIT2102 - Ed Discussion", ["FIT2102", "FIT2109"]), ["FIT2102"]);
+  assert.deepEqual(courseCodesInText("No unit in title", ["FIT2102", "FIT2109"]), []);
 });
