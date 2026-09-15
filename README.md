@@ -1,5 +1,10 @@
 # Monash Attendance Helper
 
+[![Type](https://img.shields.io/badge/Type-Chrome_Extension-2563eb?style=for-the-badge)](#)
+[![Tech](https://img.shields.io/badge/Tech-JavaScript-7c3aed?style=for-the-badge)](#)
+[![License](https://img.shields.io/badge/License-MIT-16a34a?style=for-the-badge)](LICENSE)
+
+
 **English** | [简体中文](README.zh-CN.md)
 
 A privacy-focused Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
