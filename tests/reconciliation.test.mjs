@@ -89,6 +89,21 @@ test("keeps an already-completed Attendance class in the review data", () => {
   assert.match(mma.context, /无需再次提交/);
 });
 
+test("same-day completed sessions remain distinct during portal merge", () => {
+  const portal = [
+    { course: "FIT2102", session: "Workshop 01", time: "4:00 pm", day: "Tuesday", attendanceDate: { iso: "2026-09-15", key: "15_Sep_26" }, completed: true, entryUrl: "", sourceUrl: "https://attendance.monash.edu.my/student/Units.aspx#15_Sep_26" },
+    { course: "FIT2102", session: "Tutorial 06", time: "6:00 pm", day: "Tuesday", attendanceDate: { iso: "2026-09-15", key: "15_Sep_26" }, completed: true, entryUrl: "", sourceUrl: "https://attendance.monash.edu.my/student/Units.aspx#15_Sep_26" },
+    { course: "FIT3162", session: "Studio 01", time: "5:00 pm", day: "Tuesday", attendanceDate: { iso: "2026-09-15", key: "15_Sep_26" }, completed: true, entryUrl: "", sourceUrl: "https://attendance.monash.edu.my/student/Units.aspx#15_Sep_26" }
+  ];
+  const merged = mergePortalAttendance([], portal);
+  assert.equal(merged.length, 3);
+  assert.deepEqual(
+    merged.map((item) => `${item.course}|${item.session}|${item.time}`).sort(),
+    ["FIT2102|Tutorial 06|6:00 pm", "FIT2102|Workshop 01|4:00 pm", "FIT3162|Studio 01|5:00 pm"]
+  );
+  assert.ok(merged.every((item) => item.completed && item.confidence === "completed"));
+});
+
 test("a completed class can still be enriched with its historical Moodle code", () => {
   const rows = [["Workshop", "Tuesday, 8 Sep", "01", "2:00PM", "JSXDV"]];
   const item = {
