@@ -1,6 +1,7 @@
-import { matchStructuredAttendanceRows, mergePortalAttendance } from "./reconciliation-core.js";
+import { buildCodeEvidenceCache, codeConfidenceOf, matchStructuredAttendanceRows, mergePortalAttendance, needsCodeEvidence, restoreCodeEvidence } from "./reconciliation-core.js";
 
-const RECONCILIATION_VERSION = 3;
+const RECONCILIATION_VERSION = 4;
+const EVIDENCE_CACHE_KEY = "attendanceEvidenceCacheV4";
 let running = false;
 
 function pause(ms) {
@@ -93,12 +94,16 @@ function extractAttendanceRows(targetDateKey) {
   const courseRe = /\b[A-Z]{3}\d{4}\b/i;
   const typeRe = /\b(workshop|tutorial|studio|applied(?:\s+class)?|practical|laboratory|lab|seminar)\b\s*0*(\d{1,2})?/i;
   const timeRe = /\b\d{1,2}:\d{2}\s*[ap]m\b/i;
+  const completionClue = (value) => {
+    const clue = String(value || "").toLowerCase();
+    if (/question|help|unknown|pending|incomplete/.test(clue)) return false;
+    return /[✓✔☑]|\b(?:glyphicon|icon)[-_ ]+ok\b|\b(?:fa|fas|far|fal|fab|bi)[-_ ]+check(?:[-_ ]|\b)|\bcheck(?:ed|mark)?\b|\btick\b|\bcomplete(?:d)?\b|\bpresent\b|\bsuccess\b/.test(clue);
+  };
   const visible = (node) => {
     const style = getComputedStyle(node);
     return style.display !== "none" && style.visibility !== "hidden" && (node.getClientRects().length > 0 || node.offsetWidth > 0 || node.offsetHeight > 0);
   };
   const sessions = [];
-  const keys = new Set();
 
   const add = (root, completedHint = false, entryHref = "") => {
     if (!root || !visible(root)) return;
@@ -110,20 +115,26 @@ function extractAttendanceRows(targetDateKey) {
     if (!course || !type || !time) return;
     const number = type[2] ? Number(type[2]) : null;
     const session = `${type[1].replace(/\s+/g, " ")}${number !== null ? ` ${String(number).padStart(2, "0")}` : ""}`;
-    const clue = compact([
-      text,
-      root.getAttribute?.("class"), root.getAttribute?.("title"), root.getAttribute?.("aria-label"),
-      ...[...(root.querySelectorAll?.("[class],[data-icon],[title],[aria-label],img,svg,i") || [])].slice(0, 35).map((node) => `${node.getAttribute?.("class") || ""} ${node.getAttribute?.("data-icon") || ""} ${node.getAttribute?.("title") || ""} ${node.getAttribute?.("aria-label") || ""} ${node.getAttribute?.("alt") || ""}`)
-    ].join(" "));
-    const completed = completedHint || /✓|check|tick|complete|completed|present|success/i.test(clue) && !entryHref;
+    const nodes = [root, ...[...(root.querySelectorAll?.("[class],[data-icon],[title],[aria-label],img,svg,i,span") || [])].slice(0, 45)];
+    const clue = compact(nodes.map((node) => `${node.getAttribute?.("class") || ""} ${node.getAttribute?.("data-icon") || ""} ${node.getAttribute?.("title") || ""} ${node.getAttribute?.("aria-label") || ""} ${node.getAttribute?.("alt") || ""} ${node.getAttribute?.("src") || ""}`).join(" "));
+    // The Malaysia Attendance portal uses Bootstrap's `glyphicon-ok` for a completed row.
+    // Pending rows expose an Entry.aspx link and normally use `glyphicon-question-sign`.
+    // Completion is therefore independent from whether we can still rediscover the old code.
+    const completed = !entryHref && (completedHint || completionClue(`${text} ${clue}`));
     const key = `${targetDateKey}|${course}|${session.toLowerCase()}|${time.toLowerCase()}`;
     const row = { course, session, attendanceLabel: text, time, entryUrl: entryHref || "", completed, sourceUrl: location.href };
     const index = sessions.findIndex((item) => item.key === key);
     if (index < 0) {
-      keys.add(key);
       sessions.push({ key, ...row });
-    } else if (completed || (!sessions[index].entryUrl && entryHref)) {
-      sessions[index] = { key, ...sessions[index], ...row, completed: sessions[index].completed || completed };
+    } else {
+      const previous = sessions[index];
+      sessions[index] = {
+        key,
+        ...previous,
+        ...row,
+        entryUrl: row.entryUrl || previous.entryUrl || "",
+        completed: previous.completed || completed
+      };
     }
   };
 
@@ -144,14 +155,13 @@ function extractAttendanceRows(targetDateKey) {
     const text = compact(node.innerText || node.textContent);
     if (!courseRe.test(text) || !typeRe.test(text) || !timeRe.test(text)) continue;
     const entry = node.querySelector?.("a[href*='Entry.aspx']");
-    const completedHint = !entry && (/✓/.test(text) || /check|complete|present|success/i.test(compact(`${node.className || ""} ${node.getAttribute?.("aria-label") || ""}`)));
-    add(node, completedHint, entry?.href || "");
+    add(node, false, entry?.href || "");
   }
 
-  const markers = document.querySelectorAll("[class*='check'],[class*='complete'],[class*='success'],[data-icon*='check'],[title*='complete' i],[aria-label*='complete' i],[aria-label*='check' i],svg,i,img");
+  const markers = document.querySelectorAll("[class*='glyphicon-ok'],[class*='icon-ok'],[class*='check'],[class*='complete'],[class*='success'],[data-icon*='check'],[title*='complete' i],[aria-label*='complete' i],[aria-label*='check' i],svg,i,img,span");
   for (const marker of markers) {
-    const clue = compact(`${marker.getAttribute?.("class") || ""} ${marker.getAttribute?.("data-icon") || ""} ${marker.getAttribute?.("title") || ""} ${marker.getAttribute?.("aria-label") || ""} ${marker.getAttribute?.("alt") || ""}`);
-    if (!/check|tick|complete|present|success/i.test(clue)) continue;
+    const clue = compact(`${marker.getAttribute?.("class") || ""} ${marker.getAttribute?.("data-icon") || ""} ${marker.getAttribute?.("title") || ""} ${marker.getAttribute?.("aria-label") || ""} ${marker.getAttribute?.("alt") || ""} ${marker.getAttribute?.("src") || ""}`);
+    if (!completionClue(clue)) continue;
     let root = marker;
     for (let depth = 0; depth < 8 && root.parentElement; depth += 1) {
       root = root.parentElement;
@@ -184,7 +194,7 @@ async function readAttendancePortal(lookbackDays) {
     scans.push(page.ok ? {
       ok: true,
       url,
-      reconciliation: "attendance-v3",
+      reconciliation: "attendance-v4",
       textLength: 0,
       linkCount: rows.filter((row) => row.entryUrl).length,
       imageCount: 0,
@@ -193,8 +203,9 @@ async function readAttendancePortal(lookbackDays) {
       threadCount: 0,
       codeLikeCount: 0,
       structuredRowCount: rows.length,
+      completedRowCount: rows.filter((row) => row.completed).length,
       excerpt: rows.map((row) => `${row.completed ? "✓" : "○"} ${row.course} ${row.session} ${row.time}`).join("\n").slice(0, 5000)
-    } : { ok: false, url, error: page.error, reconciliation: "attendance-v3" });
+    } : { ok: false, url, error: page.error, reconciliation: "attendance-v4" });
   }
   return { sessions, scans };
 }
@@ -265,17 +276,17 @@ function extractMoodleEvidence() {
 }
 
 function unresolved(result, course = "") {
-  return (result.items || []).filter((item) => !item.completed && (!item.code || item.confidence !== "high") && (!course || String(item.course || "").toUpperCase() === course));
+  return (result.items || []).filter((item) => needsCodeEvidence(item) && (!course || String(item.course || "").toUpperCase() === course));
 }
 
 function mergeRows(result, course, rows, sourceUrl) {
   const indexes = (result.items || []).map((item, index) => ({ item, index }))
-    .filter(({ item }) => !item.completed && String(item.course || "").toUpperCase() === course && (!item.code || item.confidence !== "high"));
+    .filter(({ item }) => String(item.course || "").toUpperCase() === course && needsCodeEvidence(item));
   if (!indexes.length || !rows?.length) return 0;
   const matched = matchStructuredAttendanceRows(rows.map((row) => ({ ...row, sourceUrl })), indexes.map(({ item }) => item));
   let changed = 0;
   matched.forEach((candidate, localIndex) => {
-    if (!candidate.code || candidate.confidence !== "high") return;
+    if (!candidate.code || codeConfidenceOf(candidate) !== "high") return;
     const index = indexes[localIndex].index;
     result.items[index] = { ...result.items[index], ...candidate };
     changed += 1;
@@ -319,7 +330,8 @@ async function discoverCourseRoot(course) {
 async function resolveMoodleCourse(result, course) {
   const queue = courseCandidateUrls(result, course);
   // The normal scanner already tells us the exact unit/section URLs in almost every case.
-  // Read those first. v2 blocked on /my/courses.php before touching the useful TRC2001 page.
+  // Read those first. If a completed class was absent from the normal scan, discover the
+  // unit root from My units and enrich the completed row with its historical code too.
   if (!queue.length) {
     const root = await discoverCourseRoot(course);
     if (root) queue.push(root);
@@ -338,7 +350,7 @@ async function resolveMoodleCourse(result, course) {
       ok: page.ok,
       url,
       courses: [course.toLowerCase()],
-      reconciliation: "moodle-v3",
+      reconciliation: "moodle-v4",
       error: page.error,
       textLength: 0,
       linkCount: (evidence.attendanceLinks || []).length + (evidence.sectionLinks || []).length,
@@ -363,12 +375,15 @@ async function reconcile(latestScan) {
     items: (latestScan.items || []).map((item) => ({ ...item })),
     scans: [...(latestScan.scans || [])]
   };
-  const beforeCodes = result.items.filter((item) => item.code && item.confidence === "high").length;
+  const beforeCodes = result.items.filter((item) => item.code && codeConfidenceOf(item) === "high").length;
   const beforeCompleted = result.items.filter((item) => item.completed).length;
-  const { settings } = await chrome.storage.local.get("settings");
+  const stored = await chrome.storage.local.get(["settings", EVIDENCE_CACHE_KEY]);
+  const settings = stored.settings;
+  const evidenceCache = stored[EVIDENCE_CACHE_KEY] || {};
 
   const portal = await readAttendancePortal(settings?.lookbackDays || 7);
   result.items = mergePortalAttendance(result.items, portal.sessions);
+  result.items = restoreCodeEvidence(result.items, evidenceCache);
   result.scans.push(...portal.scans);
 
   const courseScores = new Map();
@@ -383,7 +398,7 @@ async function reconcile(latestScan) {
   const courses = [...courseScores.keys()].sort((a, b) => (courseScores.get(b) || 0) - (courseScores.get(a) || 0));
   for (const course of courses) await resolveMoodleCourse(result, course);
 
-  const afterCodes = result.items.filter((item) => item.code && item.confidence === "high").length;
+  const afterCodes = result.items.filter((item) => item.code && codeConfidenceOf(item) === "high").length;
   const afterCompleted = result.items.filter((item) => item.completed).length;
   result.reconciliation = {
     version: RECONCILIATION_VERSION,
@@ -407,7 +422,9 @@ async function reconcileAndStore(latestScan) {
   running = true;
   try {
     const reconciled = await reconcile(latestScan);
-    await chrome.storage.local.set({ latestScan: reconciled });
+    const stored = await chrome.storage.local.get(EVIDENCE_CACHE_KEY);
+    const cache = buildCodeEvidenceCache(reconciled.items, stored[EVIDENCE_CACHE_KEY] || {});
+    await chrome.storage.local.set({ latestScan: reconciled, [EVIDENCE_CACHE_KEY]: cache });
     return reconciled;
   } finally {
     running = false;
@@ -430,7 +447,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         ok: true,
         total: reconciled.items?.length || 0,
         completed: reconciled.items?.filter((item) => item.completed).length || 0,
-        found: reconciled.items?.filter((item) => item.code && item.confidence === "high").length || 0,
+        found: reconciled.items?.filter((item) => item.code && codeConfidenceOf(item) === "high").length || 0,
         reconciliation: reconciled.reconciliation
       });
     } catch (error) {
