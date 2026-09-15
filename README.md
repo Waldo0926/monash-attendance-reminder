@@ -1,80 +1,157 @@
 # Monash Attendance Helper
 
-> Current extension build: **v1.3.13** — keeps the v1.3.11 cross-course and class-group safety checks, and fixes a regression where Ed can flatten multiple visual attendance rows into one DOM text line. Matching now isolates the local `Workshop/Tutorial ... Code` slice around each code before validating the class number, restoring valid rows such as `FIT2109 Workshop 02 → SQP3R` without allowing `FIT2102 Tutorial 06 → X9JJB` to leak into FIT2109 Tutorial 05.
+**English** | [简体中文](README.zh-CN.md)
 
-A configurable Chrome extension that discovers recent classes from Monash Attendance, finds attendance codes from Gmail, Moodle, and Ed, reminds students, and submits only after confirmation.
+A privacy-focused Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 
-The default mode does **not** require a manually entered timetable. It reads the last seven days of available activities from the signed-in Monash Attendance account, then searches the signed-in Gmail, Moodle, and Ed sessions for matching codes. A manual timetable remains available only as a fallback.
+The default mode does **not** require a manually entered timetable. It reads recent activities from the Monash Attendance account already signed in to the same Chrome profile, keeps completed activities visible, and searches the student's signed-in Monash learning services for matching attendance codes.
 
-The extension never uploads credentials, page content, attendance codes, or your timetable to this project or its website. OCR runs locally inside the extension; its engine and English model are bundled with the download. Ed discovery also uses short nearby link context so course/thread links remain detectable when Ed renders the visible title outside the anchor itself.
+> **Important:** This project is not an unattended auto-attendance bot. It prepares attendance information for review. The student must confirm that they actually attended the class before any record can be submitted.
 
-The bundled OCR worker is loaded directly from the extension package (rather than through a `blob:` worker), so it remains compatible with Chrome Manifest V3's extension-page Content Security Policy. Before OCR, Chromium decodes each source image and re-encodes it as PNG, so Ed images delivered as browser-native formats such as WebP/AVIF do not get passed directly to Leptonica. Ephemeral `blob:` images are snapshotted while the Ed page is still open.
+## Features
 
-## What it does
+- Discovers recent activities from **Monash Attendance** automatically.
+- Keeps activities that Attendance already marks as completed and shows them as completed instead of hiding them.
+- Searches for attendance codes in this order:
+  1. **Gmail** — recent attendance-related messages.
+  2. **Ed Discussion** — recent attendance posts for courses that use Ed.
+  3. **Moodle** — the relevant unit, recent Week/section pages, and Attendance activities.
+- Parses text-based attendance tables directly.
+- Uses bundled, local OCR for attendance tables posted as images.
+- Matches codes against available course, activity type, class number, date, and time information.
+- Marks uncertain matches for manual review instead of silently guessing.
+- Sends Chrome reminders at configurable times.
+- Requires an explicit attendance declaration before submission.
+- Supports a manual timetable only as an optional fallback.
 
-1. Reads recent activities from the Monash Attendance account already signed in to the same Chrome profile.
-2. Runs at your configured primary and optional backup reminder times.
-3. Searches the signed-in Gmail account and discovers matching Moodle / Ed course pages in background tabs. Attendance-code tables posted as images are read locally with bundled OCR.
-4. Matches five-character attendance codes against the course, class label, and activity date.
-5. Sends a system notification and opens a review page when clicked.
-6. Submits only the rows selected by the student after the student ticks the explicit attendance declaration.
+Reminder times use the **current system timezone of the computer running Chrome**.
 
-Reminder times use the **current system timezone of the computer running Chrome**. The timezone is detected automatically rather than being fixed to Malaysia.
+## How automatic discovery works
 
-## Automatic discovery (default)
+Keep these services signed in to the **same Chrome profile**:
 
-Keep Monash Attendance, Gmail, Moodle, and Ed signed in to the same Chrome profile. Leave **Automatically discover classes from Attendance** enabled. No Week 1 date or manual course list is required.
+- Monash Attendance
+- Gmail
+- Monash Moodle
+- Ed Discussion, if your units use Ed
 
-The extension checks activities whose Attendance date is up to seven days old, inclusive of today and the date exactly seven days earlier. It only prepares a review list; it never submits without the student's explicit attendance declaration and confirmation.
+The extension follows this general flow:
 
-## Manual timetable (optional fallback)
+```text
+Monash Attendance
+  ↓
+Discover recent activities and completed status
+  ↓
+Gmail
+  ↓ if unresolved
+Ed Discussion
+  ↓ if unresolved
+Moodle
+  ↓
+Match by available course / activity / class / date / time evidence
+  ↓
+Review page
+  ↓
+Student confirmation
+```
 
-For each course, add:
+### Moodle fallback
 
-- **Course code / name** — for example `FIT2004`.
-- **Source** — Moodle or Ed Discussion.
-- **Source URL** — use a supported Monash Moodle URL under `https://learning.monash.edu/` or an Ed URL under `https://edstem.org/`.
-- **Ed category** — optional; for example `Malaysia` if your Ed course uses that category.
-- **Class groups** — add every tutorial, workshop, studio, applied, seminar, or other class that you actually attend, together with its weekday and start time.
+Moodle discovery does more than inspect the `My units` page. For unresolved classes, the extension can follow the relevant unit into recent Week/section pages and continue into Attendance-related activities when they are available.
 
-There are intentionally **no default FIT3162 / FIT2102 / FIT2109 routes**. Those were the original developer's timetable and are now kept only as an example configuration under `examples/`.
+This is useful for units where attendance codes are published only inside Moodle rather than Gmail or Ed.
+
+## Completed attendance records
+
+The review page should show both incomplete and already-completed activities.
+
+A completed record is displayed as completed and cannot be submitted again. This makes it easier to distinguish between:
+
+- already completed attendance;
+- a high-confidence code ready for review;
+- an uncertain code that needs checking;
+- no code found.
 
 ## Install in Chrome
 
-1. Download this repository and unzip it.
+1. Download or clone this repository.
 2. Open `chrome://extensions`.
 3. Enable **Developer mode**.
-4. Choose **Load unpacked** and select the `extension` folder.
-5. Pin **Monash Attendance Helper**.
-6. Open the extension settings.
-7. Keep automatic Attendance discovery enabled and set the reminder times.
-8. Keep Gmail, Moodle, Ed, and Monash Attendance signed in in the same Chrome profile.
-9. Click **Save, then test now** and review the detected classes and codes.
+4. Select **Load unpacked**.
+5. Choose the `extension` folder from this repository.
+6. Pin **Monash Attendance Helper** if desired.
+7. Open the extension settings.
+8. Keep automatic Attendance discovery enabled and configure reminder times.
+9. Keep Gmail, Moodle, Ed, and Monash Attendance signed in to the same Chrome profile.
+10. Save the settings and use the test / re-scan option to review the detected activities and codes.
 
-The graphical configurator in `site/` can generate an `attendance-helper-config.json` file. Import it from the extension settings page with **Import web config**.
+After updating the repository locally, return to `chrome://extensions` and reload the unpacked extension.
 
-## Example configuration
+## Manual timetable fallback
 
-`examples/mum-2026-s2-example.json` demonstrates the configuration format using one student's 2026 Semester 2 MUM timetable. It is **example data only**. Do not assume its course URLs, class groups, dates, or reminder times match your own timetable.
+Automatic discovery is the recommended mode, but a manual timetable is still available as a fallback.
 
-## Important limits
+A manual course entry can include:
 
-- The extension must be installed separately in every Chrome profile/account that should be monitored.
-- The computer must be awake and Chrome must be able to run at the scheduled time. Chrome will normally deliver a missed alarm after it next starts, but an expired login still needs the student to sign in again.
-- Course staff may change post layouts. Codes marked **Review** must be checked against the shown source text before submission. Review-level matches are intentionally **not pre-selected** on the confirmation page; only high-confidence matches are checked by default.
-- A code is never proof that the student attended. Only submit a record for a class actually attended.
-- The confirmation page asks for the attendance declaration every time. It is intentionally not an unattended auto-submit bot.
-- Automatic matching depends on the course/activity labels exposed by Attendance and the wording in the source. Ambiguous matches remain unchecked for review.
+- course code or name;
+- Moodle or Ed source URL;
+- optional Ed category;
+- the Tutorial, Workshop, Laboratory, Studio, Applied, Seminar, or other class groups that the student actually attends;
+- weekday and start time for each class group.
 
-## Test
+The repository does **not** ship with a personal timetable that other students are expected to use. Example configuration files under `examples/` are demonstration data only.
 
-Run the extension parser tests:
+## Web configurator
+
+The `site/` directory contains a graphical configurator that can generate:
+
+```text
+attendance-helper-config.json
+```
+
+The generated file can be imported from the extension settings page.
+
+## Privacy and safety
+
+The extension does not upload the following information to this repository or its website:
+
+- Monash or Gmail passwords;
+- login cookies;
+- email bodies;
+- Moodle or Ed page contents;
+- attendance codes;
+- personal timetable data.
+
+OCR runs locally inside the extension. The OCR worker, WebAssembly core, and English recognition model are bundled with the extension package rather than sending screenshots to a third-party OCR service.
+
+## Safety by design
+
+An attendance code is not proof that a student attended a class. For that reason, the extension deliberately keeps a human confirmation step:
+
+- high-confidence results can be prepared for review;
+- uncertain results remain clearly marked;
+- completed activities are not submitted twice;
+- missing or ambiguous codes are not guessed;
+- the attendance declaration must be confirmed before submission.
+
+## Important limitations
+
+- Each Chrome profile must be configured separately.
+- Gmail, Moodle, Ed, and Monash Attendance may change their page structures over time.
+- Expired login sessions still require the student to sign in again.
+- OCR can make mistakes, so image-derived results should be checked when marked for review.
+- Some units may publish attendance information differently from the currently supported patterns.
+- The project cannot guarantee compatibility with every unit or every future Monash page layout.
+
+## Development and testing
+
+Run the extension parser and regression tests:
 
 ```sh
 node --test tests/*.test.mjs
 ```
 
-Run the site build/render tests and lint checks:
+Run the web configurator checks:
 
 ```sh
 cd site
@@ -83,18 +160,24 @@ npm test
 npm run lint
 ```
 
-Then load the extension unpacked, keep automatic discovery enabled, and use **Save, then test now** from its settings page. The test should produce a Chrome notification and a recent-activities review page.
+Pull requests also run automated checks through GitHub Actions.
 
-Pull requests also run these automated checks through GitHub Actions.
+## Project structure
+
+```text
+extension/   Chrome extension
+site/        Web configurator
+examples/    Example configuration files
+scripts/     Helper scripts
+tests/       Automated and regression tests
+```
+
+## Disclaimer
+
+This is a student-built helper tool. It is **not an official Monash University product** and is not operated by Monash University, a faculty, or a teaching team.
+
+Use it in accordance with Monash attendance, academic integrity, and IT policies. Only submit attendance for classes you actually attended.
 
 ## License
 
 MIT
-
-
-## v1.3.13 regression fix
-
-- Wide/short Ed screenshots are no longer assumed to contain only one row. The OCR pipeline now evaluates both `SINGLE_BLOCK` and `SINGLE_LINE`, preserving FIT2109 multi-row Workshop tables while retaining the FIT2102 `JY4H6` one-row rescue.
-- A noisy `SINGLE_LINE` result is ignored unless it contains a session row or plausible attendance code.
-- Right-column OCR is now a fallback for wide/short images rather than the primary path when the block pass already recovered all rows/codes.
-- Regression coverage keeps `JY4H6`, `JKAHX`, `SQP3R`, `ZS9CR` and the `X9JJB` cross-course guard together.
