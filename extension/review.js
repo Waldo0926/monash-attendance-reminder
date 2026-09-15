@@ -11,6 +11,27 @@ function itemStatus(item) {
   return { key: "missing", label: "未找到" };
 }
 
+function codeConfidence(item) {
+  if (item.codeConfidence === "high" || item.codeConfidence === "review") return item.codeConfidence;
+  if (item.code && (item.confidence === "high" || item.confidence === "review")) return item.confidence;
+  return "missing";
+}
+
+function sourceLinks(item, completed) {
+  const links = [];
+  const seen = new Set();
+  const add = (url, label) => {
+    const value = String(url || "");
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    links.push(`<a href="${escapeHtml(value)}" target="_blank">${label} ↗</a>`);
+  };
+  if (completed) add(item.attendanceSourceUrl, "打开 Attendance");
+  add(item.codeSourceUrl, "打开代码来源");
+  if (!links.length) add(item.sourceUrl, completed ? "打开 Attendance" : "打开来源");
+  return links.length ? `<div class="source-links">${links.join(" · ")}</div>` : "";
+}
+
 async function render() {
   const { latestScan } = await chrome.storage.local.get("latestScan");
   if (!latestScan) {
@@ -18,31 +39,35 @@ async function render() {
     return;
   }
   document.querySelector("#title").textContent = latestScan.week ? `Week ${latestScan.week} 签到确认` : "过去一周签到确认";
-  const completedCount = (latestScan.items || []).filter((item) => item.completed || item.confidence === "completed").length;
+  const items = latestScan.items || [];
+  const completedCount = items.filter((item) => item.completed || item.confidence === "completed").length;
+  const foundCodeCount = items.filter((item) => item.code && codeConfidence(item) === "high").length;
   let reconciliationNote = "";
   if (latestScan.reconciliation?.status === "complete") {
-    reconciliationNote = ` · 已签到 ${completedCount} 节 · 最终核对完成`;
+    reconciliationNote = ` · 已签到 ${completedCount} 节 · 已找到代码 ${foundCodeCount}/${items.length} · 最终核对完成`;
   } else if (latestScan.reconciliation?.status === "failed") {
     reconciliationNote = ` · 最终核对失败：${latestScan.reconciliation.error || "未知错误"}`;
   }
   document.querySelector("#subtitle").textContent = `检查时间：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")} · 扩展版本 v${chrome.runtime.getManifest().version}${reconciliationNote}`;
-  results.innerHTML = latestScan.items.map((item) => {
+  results.innerHTML = items.map((item) => {
     const status = itemStatus(item);
     const completed = status.key === "completed";
-    const autoChecked = item.code && item.confidence === "high";
+    const codeLevel = codeConfidence(item);
+    const autoChecked = !completed && item.code && codeLevel === "high";
     const checkboxDisabled = completed || !item.code;
     const context = completed
       ? (item.context || "Monash Attendance 已显示完成，无需再次提交。")
       : item.context;
-    const sourceLink = item.sourceUrl
-      ? `<a href="${escapeHtml(item.sourceUrl)}" target="_blank">打开来源 ↗</a>`
-      : "";
+    const codeText = completed
+      ? (item.code ? escapeHtml(item.code) : "✓ 已完成")
+      : escapeHtml(item.code || "—");
+    const codeTitle = completed && item.code ? "已签到；同时保留已找到的签到码" : "";
     return `
     <article class="card ${completed ? "completed-card" : ""}">
-      <div class="row"><label><input class="pick" data-id="${escapeHtml(item.id)}" type="checkbox" ${autoChecked && !completed ? "checked" : ""} ${checkboxDisabled ? "disabled" : ""}> ${escapeHtml(item.course)} · ${escapeHtml(item.session)}</label><span class="status ${status.key}">${status.label}</span></div>
-      <div class="row"><p>${escapeHtml(item.day)} ${escapeHtml(item.time)}</p><span class="code ${completed ? "completed-code" : ""}">${completed ? "✓ 已完成" : escapeHtml(item.code || "—")}</span></div>
+      <div class="row"><label><input class="pick" data-id="${escapeHtml(item.id)}" type="checkbox" ${autoChecked ? "checked" : ""} ${checkboxDisabled ? "disabled" : ""}> ${escapeHtml(item.course)} · ${escapeHtml(item.session)}</label><span class="status ${status.key}">${status.label}</span></div>
+      <div class="row"><p>${escapeHtml(item.day)} ${escapeHtml(item.time)}</p><span class="code ${completed && !item.code ? "completed-code" : ""}" title="${escapeHtml(codeTitle)}">${codeText}</span></div>
       ${context ? `<div class="context">${escapeHtml(context)}</div>` : `<p class="muted">来源页面没有匹配到这个班次，请手动打开来源检查。</p>`}
-      ${sourceLink}
+      ${sourceLinks(item, completed)}
     </article>`;
   }).join("");
 
@@ -52,7 +77,7 @@ async function render() {
   document.querySelector("#scanList").innerHTML = [
     ...(latestScan.discoveryErrors || []).map((error) => `<li class="scan-failed">Attendance：${escapeHtml(error)}</li>`),
     ...scans.map((scan) => `<li class="${scan.ok ? "scan-ok" : "scan-failed"}">${scan.ok ? "✓" : "✗"} <a href="${escapeHtml(scan.url)}" target="_blank">${escapeHtml(scan.url)}</a>${scan.ok
-      ? ` · ${scan.textLength ?? 0} 字 · ${scan.linkCount ?? 0} 链接${scan.courses?.length ? ` · 课程 ${scan.courses.map((course) => escapeHtml(String(course).toUpperCase())).join("/")}` : ""}${scan.structuredRowCount ? ` · ${scan.structuredRowCount} 条结构化签到记录` : ""}${scan.imageCount ? ` · ${scan.imageCount} 张候选图 / ${scan.ocrSelectedCount ?? 0} 张送入OCR（${scan.ocrLength ?? 0} 字）` : ""}${scan.ocrError ? ` · OCR失败：${escapeHtml(scan.ocrError)}` : ""}${scan.threadCount ? ` · ${scan.threadCount} 封邮件` : ""} · ${scan.codeLikeCount ?? 0} 个疑似代码${scan.excerpt ? ` <details><summary>查看抓到的文字</summary><pre class="excerpt">${escapeHtml(scan.excerpt)}</pre></details>` : ""}${scan.ocrDetails?.length ? ` <details><summary>查看逐图 OCR</summary>${scan.ocrDetails.map((detail) => `<pre class="excerpt">图片 ${detail.index}${detail.width || detail.height ? ` · ${detail.width || "?"}×${detail.height || "?"}` : ""}${detail.src ? ` · ${escapeHtml(detail.src)}` : ""}\n${escapeHtml(detail.text || detail.error || "（无文字）")}${detail.passes?.length ? `\n\n--- OCR passes ---\n${detail.passes.map((pass) => `[${escapeHtml(pass.label)}]\n${escapeHtml(pass.text || "（无文字）")}`).join("\n\n")}` : ""}</pre>`).join("")}</details>` : ""}`
+      ? ` · ${scan.textLength ?? 0} 字 · ${scan.linkCount ?? 0} 链接${scan.courses?.length ? ` · 课程 ${scan.courses.map((course) => escapeHtml(String(course).toUpperCase())).join("/")}` : ""}${scan.structuredRowCount ? ` · ${scan.structuredRowCount} 条结构化签到记录` : ""}${scan.completedRowCount ? ` · ${scan.completedRowCount} 条已签到` : ""}${scan.imageCount ? ` · ${scan.imageCount} 张候选图 / ${scan.ocrSelectedCount ?? 0} 张送入OCR（${scan.ocrLength ?? 0} 字）` : ""}${scan.ocrError ? ` · OCR失败：${escapeHtml(scan.ocrError)}` : ""}${scan.threadCount ? ` · ${scan.threadCount} 封邮件` : ""} · ${scan.codeLikeCount ?? 0} 个疑似代码${scan.excerpt ? ` <details><summary>查看抓到的文字</summary><pre class="excerpt">${escapeHtml(scan.excerpt)}</pre></details>` : ""}${scan.ocrDetails?.length ? ` <details><summary>查看逐图 OCR</summary>${scan.ocrDetails.map((detail) => `<pre class="excerpt">图片 ${detail.index}${detail.width || detail.height ? ` · ${detail.width || "?"}×${detail.height || "?"}` : ""}${detail.src ? ` · ${escapeHtml(detail.src)}` : ""}\n${escapeHtml(detail.text || detail.error || "（无文字）")}${detail.passes?.length ? `\n\n--- OCR passes ---\n${detail.passes.map((pass) => `[${escapeHtml(pass.label)}]\n${escapeHtml(pass.text || "（无文字）")}`).join("\n\n")}` : ""}</pre>`).join("")}</details>` : ""}`
       : ` · ${escapeHtml(scan.error || "失败")}`}</li>`)
   ].join("");
 }
@@ -70,7 +95,7 @@ document.querySelector("#rescan").addEventListener("click", async () => {
     results.innerHTML = `<section class="card empty"><h2>扫描失败</h2><p>${escapeHtml(scan?.error || "未知错误")}</p></section>`;
     return;
   }
-  results.innerHTML = `<section class="card empty"><h2>正在做最终核对…</h2><p>正在核对已签到课程，并按日期 / 班号 / 时间读取 Moodle Attendance 表格。</p></section>`;
+  results.innerHTML = `<section class="card empty"><h2>正在做最终核对…</h2><p>正在核对已签到课程，并按日期 / 班号 / 时间补充历史签到码。</p></section>`;
   const final = await chrome.runtime.sendMessage({ type: "RUN_FINAL_RECONCILIATION" });
   if (!final?.ok) {
     await render();
@@ -99,7 +124,7 @@ submit.addEventListener("click", async () => {
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local" || !changes.latestScan) return;
   const next = changes.latestScan.newValue;
-  if (next?.reason === "manual" && next?.mode === "attendance-discovery" && next?.reconciliation?.version !== 3) return;
+  if (next?.reason === "manual" && next?.mode === "attendance-discovery" && next?.reconciliation?.version !== 4) return;
   render().then(updateSubmit).catch(() => {});
 });
 
