@@ -16,8 +16,8 @@ test("keeps the automatic source order Gmail -> Ed -> Moodle", async () => {
 test("best-effort switches Gmail search from Most relevant to Most recent", async () => {
   const source = await text("content.js");
   assert.match(source, /preferGmailMostRecent/);
-  assert.match(source, /showing\\s\+most\\s\+relevant/);
-  assert.match(source, /most\\s\+recent/);
+  assert.match(source, /showing\s\+most\s\+relevant/);
+  assert.match(source, /most\s\+recent/);
   assert.match(source, /menuitemradio/);
 });
 
@@ -48,7 +48,7 @@ test("manual review explicitly awaits final reconciliation before rendering", as
   const reconcile = review.indexOf('type: "RUN_FINAL_RECONCILIATION"');
   const finalRender = review.indexOf("await render();", reconcile);
   assert.ok(scan >= 0 && reconcile > scan && finalRender > reconcile);
-  assert.match(review, /reconciliation\?\.version !== 3/);
+  assert.match(review, /reconciliation\?\.version !== 4/);
 });
 
 test("reconciliation v3 tolerates never-complete pages and reads Attendance sequentially", async () => {
