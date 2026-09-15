@@ -99,14 +99,32 @@
       if (already.has(identity)) continue;
 
       const synthetic = document.createElement("a");
-      const url = new URL(location.href);
-      url.searchParams.set("d", dateKey);
-      url.searchParams.set("mah_completed", "1");
+      const visibleUrl = new URL(location.href);
+      visibleUrl.searchParams.set("d", dateKey);
+      visibleUrl.searchParams.set("mah_completed", "1");
       // discoverAttendance() deduplicates by href, so every completed class on the same
       // date must have a stable per-session discriminator or all but one would collapse.
-      url.searchParams.set("mah_id", identity);
-      url.hash = "Entry.aspx-completed";
-      synthetic.href = url.href;
+      visibleUrl.searchParams.set("mah_id", identity);
+      visibleUrl.hash = "mah-completed";
+
+      const discoveryUrl = new URL(visibleUrl.href);
+      discoveryUrl.hash = "Entry.aspx-completed";
+
+      // Keep the real DOM `href` attribute free of "Entry.aspx". Final reconciliation uses
+      // a CSS selector for real Entry.aspx links; if the synthetic marker matched that selector
+      // it would incorrectly reclassify a green-tick completed row as pending. content.js reads
+      // the JS `href` property instead, so expose the discovery marker only through that getter.
+      synthetic.setAttribute("href", visibleUrl.href);
+      try {
+        Object.defineProperty(synthetic, "href", {
+          configurable: true,
+          get: () => discoveryUrl.href
+        });
+      } catch {
+        // Chrome normally permits the per-element accessor. If it ever does not, preserving
+        // discovery is safer than dropping a completed class; review.js still blocks resubmit.
+        synthetic.setAttribute("href", discoveryUrl.href);
+      }
       synthetic.textContent = `${descriptor.time} ${descriptor.course} ${descriptor.session}`;
       synthetic.setAttribute(SYNTHETIC_ATTR, dateKey);
       synthetic.dataset.mahIdentity = identity;
