@@ -24,6 +24,21 @@ test("completed-row shim never replaces a real pending Entry.aspx row", () => {
   assert.match(shim, /Entry\.aspx-completed/);
 });
 
+test("final reconciliation treats synthetic completed links as completed but not submittable", () => {
+  const reconciler = read("../extension/reconciliation-v3.js");
+  assert.match(reconciler, /function extractAttendanceRows/);
+  assert.match(reconciler, /searchParams\.get\("mah_completed"\) === "1"/);
+  assert.match(reconciler, /const syntheticCompleted = syntheticCompletedHref\(entryHref\)/);
+  assert.match(reconciler, /const realEntryHref = syntheticCompleted \? "" : String\(entryHref \|\| ""\)/);
+  assert.match(reconciler, /entryUrl: completed \? "" : realEntryHref/);
+});
+
+test("final reconciliation keeps a real Entry.aspx row pending even if generic success CSS exists", () => {
+  const reconciler = read("../extension/reconciliation-v3.js");
+  assert.match(reconciler, /const completed = syntheticCompleted \|\| \(!realEntryHref && \(completedHint \|\| completionClue/);
+  assert.match(reconciler, /add\(root, syntheticCompletedHref\(link\.href\), link\.href\)/);
+});
+
 test("review and popup treat synthetic completed rows as completed and never submit them", () => {
   const review = read("../extension/review.js");
   const popup = read("../extension/popup.js");
