@@ -21,6 +21,6 @@ test("Moodle fallback can inspect both My units and Dashboard when target cards 
   assert.match(fallback, /mergeCourseCandidates/);
 });
 
-test("extension version includes completed-row final reconciliation", () => {
-  assert.equal(manifest.version, "1.3.23");
+test("extension version includes non-invasive completed-row reconciliation", () => {
+  assert.equal(manifest.version, "1.3.24");
 });
