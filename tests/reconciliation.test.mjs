@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchStructuredAttendanceRows, mergePortalAttendance, parseStructuredAttendanceRows } from "../extension/reconciliation-core.js";
+import {
+  buildCodeEvidenceCache,
+  codeConfidenceOf,
+  isCompletionClue,
+  matchStructuredAttendanceRows,
+  mergePortalAttendance,
+  parseStructuredAttendanceRows,
+  restoreCodeEvidence
+} from "../extension/reconciliation-core.js";
 
 const trcRows = [
   ["Session", "Date & Time", "Attendance Code"],
@@ -31,6 +39,7 @@ test("matches the user's TRC2001 Workshop 02 and Laboratory 03 exact rows", () =
   const [workshop, lab] = matchStructuredAttendanceRows(trcRows, items);
   assert.equal(workshop.code, "MWJU6");
   assert.equal(workshop.confidence, "high");
+  assert.equal(workshop.codeConfidence, "high");
   assert.equal(lab.code, "7JZM8");
   assert.equal(lab.confidence, "high");
 });
@@ -49,20 +58,78 @@ test("also handles the Monash table layout with the class number in its own cell
   assert.equal(tutorial.code, "JKAHX");
 });
 
+test("recognises the Bootstrap icon used by completed Monash Attendance rows", () => {
+  assert.equal(isCompletionClue("glyphicon glyphicon-ok text-success"), true);
+  assert.equal(isCompletionClue("fa fa-check-circle"), true);
+  assert.equal(isCompletionClue("glyphicon glyphicon-question-sign"), false);
+});
+
 test("keeps an already-completed Attendance class in the review data", () => {
   const existing = [
     { id: "eng", course: "ENG2005", session: "Workshop 01", time: "8:00 am", attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" }, code: "ADDKB", confidence: "high" }
   ];
   const portal = [
-    { course: "ENG2005", session: "Workshop 01", time: "8:00 am", attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" }, completed: false, entryUrl: "https://attendance.monash.edu.my/student/Entry.aspx?d=8_Sep_26" },
-    { course: "MMA2004", session: "Workshop 01", time: "2:00 pm", day: "Tuesday", attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" }, completed: true, entryUrl: "" }
+    { course: "ENG2005", session: "Workshop 01", time: "8:00 am", attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" }, completed: true, entryUrl: "", sourceUrl: "https://attendance.monash.edu.my/student/Units.aspx#8_Sep_26" },
+    { course: "MMA2004", session: "Workshop 01", time: "2:00 pm", day: "Tuesday", attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" }, completed: true, entryUrl: "", sourceUrl: "https://attendance.monash.edu.my/student/Units.aspx#8_Sep_26" }
   ];
   const merged = mergePortalAttendance(existing, portal);
   assert.equal(merged.length, 2);
+
+  const eng = merged.find((item) => item.course === "ENG2005");
+  assert.equal(eng.completed, true);
+  assert.equal(eng.confidence, "completed");
+  assert.equal(eng.code, "ADDKB", "marking a row completed must never erase a known code");
+  assert.equal(eng.codeConfidence, "high");
+
   const mma = merged.find((item) => item.course === "MMA2004");
   assert.ok(mma);
   assert.equal(mma.completed, true);
   assert.equal(mma.confidence, "completed");
   assert.equal(mma.code, "");
   assert.match(mma.context, /无需再次提交/);
+});
+
+test("a completed class can still be enriched with its historical Moodle code", () => {
+  const rows = [["Workshop", "Tuesday, 8 Sep", "01", "2:00PM", "JSXDV"]];
+  const item = {
+    id: "mma",
+    course: "MMA2004",
+    session: "Workshop 01",
+    time: "2:00 pm",
+    attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" },
+    completed: true,
+    confidence: "completed",
+    code: ""
+  };
+  const [matched] = matchStructuredAttendanceRows(rows, [item]);
+  assert.equal(matched.completed, true);
+  assert.equal(matched.confidence, "completed");
+  assert.equal(matched.code, "JSXDV");
+  assert.equal(matched.codeConfidence, "high");
+  assert.match(matched.context, /已显示完成/);
+});
+
+test("last-known high-confidence code evidence survives later rescans", () => {
+  const completedWithCode = {
+    course: "MMA2004",
+    session: "Workshop 01",
+    time: "2:00 pm",
+    attendanceDate: { iso: "2026-09-08", key: "8_Sep_26" },
+    completed: true,
+    confidence: "completed",
+    code: "JSXDV",
+    codeConfidence: "high",
+    codeSourceUrl: "https://learning.monash.edu/mod/forum/view.php?id=1"
+  };
+  const cache = buildCodeEvidenceCache([completedWithCode]);
+  const restored = restoreCodeEvidence([{
+    ...completedWithCode,
+    code: "",
+    codeConfidence: "missing",
+    context: "Monash Attendance 已显示完成，无需再次提交。"
+  }], cache)[0];
+  assert.equal(restored.completed, true);
+  assert.equal(restored.confidence, "completed");
+  assert.equal(restored.code, "JSXDV");
+  assert.equal(codeConfidenceOf(restored), "high");
 });
