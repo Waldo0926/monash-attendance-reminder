@@ -33,3 +33,11 @@ test("review and popup treat synthetic completed rows as completed and never sub
   assert.match(popup, /function portalCompleted\(item\)/);
   assert.match(popup, /items\.filter\(portalCompleted\)/);
 });
+
+test("settings test flow does not stop after the preliminary SCAN_ALL result", () => {
+  const options = read("../extension/options.js");
+  const scanIndex = options.indexOf('type: "SCAN_ALL"');
+  const reconciliationIndex = options.indexOf('type: "RUN_FINAL_RECONCILIATION"');
+  assert.ok(scanIndex >= 0, "settings page must run the preliminary scan");
+  assert.ok(reconciliationIndex > scanIndex, "settings page must run final reconciliation after the preliminary scan");
+});
