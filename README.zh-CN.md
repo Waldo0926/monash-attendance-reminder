@@ -1,5 +1,10 @@
 # Monash Attendance Helper
 
+[![类型](https://img.shields.io/badge/%E7%B1%BB%E5%9E%8B-Chrome_%E6%89%A9%E5%B1%95-2563eb?style=for-the-badge)](#)
+[![技术](https://img.shields.io/badge/%E6%8A%80%E6%9C%AF-JavaScript-7c3aed?style=for-the-badge)](#)
+[![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-16a34a?style=for-the-badge)](LICENSE)
+
+
 [English](README.md) | **简体中文**
 
 一个注重隐私的 Chrome 扩展，帮助 Monash 学生自动发现近期需要处理的考勤活动，从 Gmail、Ed Discussion 和 Moodle 中寻找对应的 Attendance Code，在提交前集中核对，并且只会在学生明确确认后才提交。
