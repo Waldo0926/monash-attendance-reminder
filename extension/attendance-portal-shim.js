@@ -102,6 +102,9 @@
       const url = new URL(location.href);
       url.searchParams.set("d", dateKey);
       url.searchParams.set("mah_completed", "1");
+      // discoverAttendance() deduplicates by href, so every completed class on the same
+      // date must have a stable per-session discriminator or all but one would collapse.
+      url.searchParams.set("mah_id", identity);
       url.hash = "Entry.aspx-completed";
       synthetic.href = url.href;
       synthetic.textContent = `${descriptor.time} ${descriptor.course} ${descriptor.session}`;
