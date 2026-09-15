@@ -29,6 +29,22 @@ export function sessionNumber(value) {
   return match ? Number(match[1]) : null;
 }
 
+export function codeConfidenceOf(item) {
+  if (item?.codeConfidence === "high" || item?.codeConfidence === "review") return item.codeConfidence;
+  if (item?.code && (item?.confidence === "high" || item?.confidence === "review")) return item.confidence;
+  return "missing";
+}
+
+export function needsCodeEvidence(item) {
+  return !item?.code || codeConfidenceOf(item) !== "high";
+}
+
+export function isCompletionClue(value) {
+  const clue = String(value || "").toLowerCase();
+  if (/question|help|unknown|pending|incomplete/.test(clue)) return false;
+  return /[✓✔☑]|\b(?:glyphicon|icon)[-_ ]+ok\b|\b(?:fa|fas|far|fal|fab|bi)[-_ ]+check(?:[-_ ]|\b)|\bcheck(?:ed|mark)?\b|\btick\b|\bcomplete(?:d)?\b|\bpresent\b|\bsuccess\b/.test(clue);
+}
+
 function codeFromCells(cells, raw, timeIndex) {
   const candidates = [];
   const start = Number.isInteger(timeIndex) && timeIndex >= 0 ? timeIndex + 1 : 0;
@@ -124,7 +140,6 @@ export function matchStructuredAttendanceRows(inputRows, items) {
   const claimedCodes = new Set();
 
   return (items || []).map((item) => {
-    if (item?.completed) return { ...item };
     const type = canonicalSessionType(item?.session);
     const time = normaliseClock(item?.time);
     const number = sessionNumber(item?.session);
@@ -141,12 +156,16 @@ export function matchStructuredAttendanceRows(inputRows, items) {
     if (unique.length !== 1 || claimedCodes.has(unique[0].code)) return { ...item };
     claimedCodes.add(unique[0].code);
     const row = unique[0];
+    const completed = Boolean(item?.completed) || item?.confidence === "completed";
+    const sourceContext = `Moodle attendance table · ${row.raw}`.slice(0, 520);
     return {
       ...item,
       code: row.code,
-      confidence: "high",
-      context: `Moodle attendance table · ${row.raw}`.slice(0, 520),
-      sourceUrl: row.sourceUrl || item.sourceUrl
+      codeConfidence: "high",
+      confidence: completed ? "completed" : "high",
+      context: completed ? `Monash Attendance 已显示完成；签到码来源：${sourceContext}`.slice(0, 620) : sourceContext,
+      codeSourceUrl: row.sourceUrl || item.codeSourceUrl || item.sourceUrl,
+      sourceUrl: completed ? (item.sourceUrl || row.sourceUrl) : (row.sourceUrl || item.sourceUrl)
     };
   });
 }
@@ -165,6 +184,44 @@ export function attendanceIdentity(item) {
   return [iso, course, type, number ?? "", time].join("|");
 }
 
+export function restoreCodeEvidence(items, cache = {}) {
+  return (items || []).map((item) => {
+    if (!needsCodeEvidence(item)) return { ...item };
+    const evidence = cache?.[attendanceIdentity(item)];
+    if (!evidence?.code || evidence.codeConfidence !== "high") return { ...item };
+    const completed = Boolean(item.completed) || item.confidence === "completed";
+    return {
+      ...item,
+      code: evidence.code,
+      codeConfidence: "high",
+      confidence: completed ? "completed" : "high",
+      context: completed
+        ? (item.context || "Monash Attendance 已显示完成，无需再次提交。")
+        : (evidence.context || item.context || ""),
+      codeSourceUrl: evidence.codeSourceUrl || evidence.sourceUrl || item.codeSourceUrl || "",
+      sourceUrl: item.sourceUrl || evidence.sourceUrl || ""
+    };
+  });
+}
+
+export function buildCodeEvidenceCache(items, previous = {}) {
+  const next = { ...(previous || {}) };
+  for (const item of items || []) {
+    if (!item?.code || codeConfidenceOf(item) !== "high") continue;
+    const key = attendanceIdentity(item);
+    if (!key || key.startsWith("||||")) continue;
+    next[key] = {
+      code: item.code,
+      codeConfidence: "high",
+      context: item.context || "",
+      sourceUrl: item.sourceUrl || "",
+      codeSourceUrl: item.codeSourceUrl || item.sourceUrl || "",
+      updatedAt: new Date().toISOString()
+    };
+  }
+  return next;
+}
+
 export function mergePortalAttendance(items, sessions, attendanceSourceUrl = "https://attendance.monash.edu.my/student/Units.aspx") {
   const byKey = new Map((items || []).map((item) => [attendanceIdentity(item), { ...item }]));
   for (const session of sessions || []) {
@@ -173,14 +230,22 @@ export function mergePortalAttendance(items, sessions, attendanceSourceUrl = "ht
     const existing = byKey.get(key);
     const completed = Boolean(session.completed);
     if (existing) {
+      const finalCompleted = completed || Boolean(existing.completed) || existing.confidence === "completed";
+      const existingCodeConfidence = codeConfidenceOf(existing);
       byKey.set(key, {
         ...existing,
         entryUrl: session.entryUrl || existing.entryUrl || "",
-        completed: completed || Boolean(existing.completed),
-        confidence: completed ? "completed" : existing.confidence,
-        code: completed ? "" : existing.code,
-        context: completed ? "Monash Attendance 已显示完成，无需再次提交。" : existing.context,
-        sourceUrl: session.sourceUrl || existing.sourceUrl || attendanceSourceUrl
+        completed: finalCompleted,
+        confidence: finalCompleted ? "completed" : existing.confidence,
+        code: existing.code || "",
+        codeConfidence: existingCodeConfidence,
+        context: finalCompleted
+          ? (existing.code
+            ? "Monash Attendance 已显示完成；已保留此前找到的签到码，无需再次提交。"
+            : "Monash Attendance 已显示完成，无需再次提交；仍会继续尝试补充历史签到码。")
+          : existing.context,
+        attendanceSourceUrl: session.sourceUrl || existing.attendanceSourceUrl || attendanceSourceUrl,
+        sourceUrl: existing.sourceUrl || session.sourceUrl || attendanceSourceUrl
       });
       continue;
     }
@@ -198,10 +263,12 @@ export function mergePortalAttendance(items, sessions, attendanceSourceUrl = "ht
       time: session.time || "",
       week: null,
       code: "",
+      codeConfidence: "missing",
       confidence: completed ? "completed" : "missing",
-      context: completed ? "Monash Attendance 已显示完成，无需再次提交。" : "",
+      context: completed ? "Monash Attendance 已显示完成，无需再次提交；仍会继续尝试补充历史签到码。" : "",
       entryUrl: session.entryUrl || "",
       sourceUrl: session.sourceUrl || attendanceSourceUrl,
+      attendanceSourceUrl: session.sourceUrl || attendanceSourceUrl,
       attendanceDate: date,
       completed
     });
