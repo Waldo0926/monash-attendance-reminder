@@ -5,6 +5,7 @@ import test from "node:test";
 
 const files = [
   new URL("../extension/attendance-portal-shim.js", import.meta.url),
+  new URL("../extension/attendance-shim-bootstrap.js", import.meta.url),
   new URL("../extension/reconciliation-v3.js", import.meta.url),
   new URL("../extension/reconciliation-core.js", import.meta.url),
   new URL("../extension/review.js", import.meta.url),
