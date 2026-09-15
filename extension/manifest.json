@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Monash Attendance Helper",
-  "version": "1.3.22",
+  "version": "1.3.23",
   "description": "Discover recent classes from Monash Attendance, find codes in Gmail/Moodle/Ed, and submit only after confirmation.",
   "permissions": [
     "alarms",
@@ -39,6 +39,7 @@
         "https://attendance.monash.edu.my/*"
       ],
       "js": [
+        "attendance-portal-shim.js",
         "content.js"
       ],
       "run_at": "document_idle"
