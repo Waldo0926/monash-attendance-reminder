@@ -11,6 +11,115 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function compactText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+// Gmail Search can default to "Most relevant", which is a bad fit for attendance codes:
+// we normally want the latest Week N announcement first, then exact date matching decides
+// whether it belongs to the Attendance row. This is deliberately best-effort because Gmail
+// changes its DOM frequently; failure simply leaves the existing ranking logic in place.
+async function preferGmailMostRecent() {
+  if (location.hostname !== "mail.google.com" || !/#search\//i.test(location.hash)) return false;
+  const bodyText = compactText(document.body.innerText);
+  if (/showing\s+most\s+recent|\bmost\s+recent\b/i.test(bodyText) && !/showing\s+most\s+relevant/i.test(bodyText)) return false;
+
+  const controls = [...document.querySelectorAll("[role='button'], button, [aria-haspopup='menu']")];
+  const dropdown = controls.find((node) => {
+    const text = compactText(`${node.innerText || node.textContent || ""} ${node.getAttribute?.("aria-label") || ""}`);
+    return /showing\s+most\s+relevant|\bmost\s+relevant\b|最相关/i.test(text);
+  });
+  if (!dropdown) return false;
+
+  try {
+    dropdown.click();
+    await sleep(300);
+    const options = [...document.querySelectorAll("[role='menuitem'], [role='menuitemradio'], [role='option']")];
+    const recent = options.find((node) => /\bmost\s+recent\b|最新/i.test(compactText(node.innerText || node.textContent)));
+    if (!recent) return false;
+    recent.click();
+    await sleep(700);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function moodleAttendanceLinkCandidates(links) {
+  if (location.hostname !== "learning.monash.edu") return [];
+  const seen = new Map();
+  for (const link of links || []) {
+    let url;
+    try {
+      url = new URL(link.href, location.href);
+    } catch {
+      continue;
+    }
+    if (url.origin !== location.origin || !/\/mod\//i.test(url.pathname)) continue;
+    const clue = compactText(`${link.label || ""} ${link.context || ""}`);
+    if (!/attendance/i.test(clue)) continue;
+
+    let score = 10;
+    if (/attendance\s+codes?|attendance\s+code/i.test(clue)) score += 100;
+    if (/international\s+student/i.test(clue)) score += 30;
+    if (/\bweek\s*\d{1,2}\b/i.test(clue)) score += 15;
+    if (/policy|requirement|guideline/i.test(clue) && !/codes?/i.test(clue)) score -= 25;
+    const href = url.href.split("#")[0];
+    const previous = seen.get(href);
+    if (!previous || score > previous.score) seen.set(href, { href, score, clue });
+  }
+  return [...seen.values()].sort((a, b) => b.score - a.score).slice(0, 3);
+}
+
+function readableDetachedDocument(doc) {
+  const lines = [];
+  const seen = new Set();
+  const add = (value) => {
+    const text = compactText(value);
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    lines.push(text);
+  };
+
+  add(doc.title);
+  for (const node of doc.querySelectorAll("h1,h2,h3,h4,p,li,tr")) {
+    if (node.tagName === "TR") {
+      const cells = [...node.querySelectorAll(":scope > th, :scope > td")].map((cell) => compactText(cell.textContent)).filter(Boolean);
+      if (cells.length) add(cells.join(" | "));
+      else add(node.textContent);
+    } else {
+      add(node.textContent);
+    }
+    if (lines.join("\n").length >= 120000) break;
+  }
+  return lines.join("\n").slice(0, 120000);
+}
+
+// Some Moodle units (TRC2001 is a real example) put no code on the weekly section itself.
+// The bottom of Week N instead contains an "International Student Attendance Codes" forum
+// link; the actual Workshop/Lab table is one click deeper. Follow only same-origin Moodle
+// activity links whose surrounding text says Attendance, and append their structured text to
+// the current page so the normal strict date/time/session matcher can process it safely.
+async function fetchMoodleAttendancePages(links) {
+  const candidates = moodleAttendanceLinkCandidates(links);
+  if (!candidates.length) return "";
+  const pages = [];
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate.href, { credentials: "include", redirect: "follow" });
+      if (!response.ok || /login|saml|okta/i.test(response.url)) continue;
+      const html = await response.text();
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const text = readableDetachedDocument(doc);
+      if (text) pages.push(`Moodle linked attendance source: ${candidate.href}\n${text}`);
+    } catch {
+      // A linked activity can be unavailable or client-rendered. Do not fail the whole scan;
+      // the service worker will still continue with Ed/Moodle fallbacks and manual review.
+    }
+  }
+  return pages.join("\n").slice(0, 240000);
+}
+
 // Ed, Moodle and Attendance are all client-rendered apps: "tab finished loading" fires
 // long before the page's own JS has fetched and rendered its actual content. Rather than
 // betting on one fixed sleep that's either too short for a slow render or wastefully long
@@ -80,7 +189,11 @@ function snapshotImageAsPng(image) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "READ_PAGE") {
-    waitForStablePage({ maxMs: message.maxMs || 8000, waitFor: message.waitFor || "", minMs: message.minMs || 0 }).then(() => {
+    (async () => {
+      await waitForStablePage({ maxMs: message.maxMs || 8000, waitFor: message.waitFor || "", minMs: message.minMs || 0 });
+      if (await preferGmailMostRecent()) {
+        await waitForStablePage({ maxMs: 5000, stableMs: 600, intervalMs: 200, minMs: 500 });
+      }
       const links = [...document.querySelectorAll("a[href]")].map((link) => {
         const label = (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim();
         let context = label;
@@ -97,6 +210,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         return { label, context, href: link.href };
       }).filter((item) => item.label && item.href);
+      const linkedMoodleAttendanceText = await fetchMoodleAttendancePages(links);
       const edDiscussionPage = location.hostname === "edstem.org" && /\/courses\/\d+\/discussion\/\d+/.test(location.pathname);
       const minImageHeight = edDiscussionPage ? 20 : 60;
       const minImageWidth = edDiscussionPage ? 180 : 240;
@@ -154,13 +268,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         ok: true,
         title: document.title,
         url: location.href,
-        text: visibleText().slice(0, 750000),
+        text: [visibleText(), linkedMoodleAttendanceText].filter(Boolean).join("\n").slice(0, 750000),
         links,
         images,
         gmailThreads,
+        linkedMoodleAttendance: Boolean(linkedMoodleAttendanceText),
         loginRequired: /login|sign in|log in|okta/i.test(document.title + " " + location.href)
       });
-    });
+    })();
     return true;
   }
 

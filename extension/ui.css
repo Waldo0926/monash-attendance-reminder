@@ -11,6 +11,7 @@ p { margin:6px 0; color:var(--muted); }
 .badge { display:inline-flex; align-items:center; gap:7px; color:var(--green); font-weight:700; }
 .badge::before { content:""; width:8px; height:8px; background:var(--green); border-radius:50%; }
 .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:18px; margin:12px 0; box-shadow:0 8px 28px rgba(21,54,92,.06); }
+.completed-card { background:#f8fcfa; border-color:#cce9dc; }
 .row { display:flex; align-items:center; justify-content:space-between; gap:14px; }
 .stack { display:grid; gap:12px; }
 label { font-weight:650; }
@@ -31,10 +32,15 @@ button:disabled { opacity:.45; cursor:not-allowed; }
 .session.compact { grid-template-columns:1fr 1fr; }
 .status { font-size:13px; font-weight:700; border-radius:999px; padding:4px 9px; background:#eef3f8; color:var(--muted); }
 .status.high { background:#e5f7ef; color:var(--green); }
+.status.completed { background:#dcf4e8; color:#0f754f; }
 .status.review { background:#fff3d6; color:var(--amber); }
 .status.missing { background:#f2f4f7; }
 .code { font:800 22px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.08em; }
+.completed-code { color:var(--green); font:750 14px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; letter-spacing:0; }
 .context { margin-top:10px; padding:10px 12px; border-radius:10px; background:#f7f9fc; color:#51627a; font-size:13px; }
+.completed-card .context { background:#eef9f3; color:#3d6654; }
+.source-links { margin-top:8px; display:flex; flex-wrap:wrap; gap:6px; font-size:13px; }
+.source-links a { color:#5c2aa8; }
 .confirm { border:1px solid #b9cce2; background:#f8fbff; }
 .confirm input { width:18px; height:18px; }
 .danger-note { color:#9c2f24; font-weight:650; }
