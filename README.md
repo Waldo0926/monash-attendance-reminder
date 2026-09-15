@@ -2,7 +2,7 @@
 
 [![Type](https://img.shields.io/badge/Type-Chrome_Extension-2563eb?style=for-the-badge)](#)
 [![Tech](https://img.shields.io/badge/Tech-JavaScript-7c3aed?style=for-the-badge)](#)
-[![License](https://img.shields.io/badge/License-MIT-16a34a?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/License-All_Rights_Reserved-dc2626?style=for-the-badge)](#)
 
 
 **English** | [简体中文](README.zh-CN.md)
@@ -185,4 +185,8 @@ Use it in accordance with Monash attendance, academic integrity, and IT policies
 
 ## License
 
-MIT
+All rights reserved. This repository is not licensed for reuse, redistribution, or modification.
+
+You are welcome to read the code as a reference, but please do not fork it, strip out the manual confirmation step, or turn it into an unattended auto-submit tool. That would go directly against the academic-integrity point this project is trying to make. If you want to build something similar, write your own implementation and keep a real confirmation step in it.
+
+Use of this extension is entirely at your own risk and must follow Monash's attendance, academic-integrity, and IT policies.
