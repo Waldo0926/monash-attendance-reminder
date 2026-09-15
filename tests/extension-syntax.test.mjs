@@ -7,6 +7,7 @@ const files = [
   new URL("../extension/reconciliation-v3.js", import.meta.url),
   new URL("../extension/reconciliation-core.js", import.meta.url),
   new URL("../extension/review.js", import.meta.url),
+  new URL("../extension/popup.js", import.meta.url),
   new URL("../extension/service-worker-wrapper.js", import.meta.url)
 ];
 
