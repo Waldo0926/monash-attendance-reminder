@@ -2,7 +2,7 @@
 
 [![类型](https://img.shields.io/badge/%E7%B1%BB%E5%9E%8B-Chrome_%E6%89%A9%E5%B1%95-2563eb?style=for-the-badge)](#)
 [![技术](https://img.shields.io/badge/%E6%8A%80%E6%9C%AF-JavaScript-7c3aed?style=for-the-badge)](#)
-[![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-16a34a?style=for-the-badge)](LICENSE)
+[![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-%E4%BF%9D%E7%95%99%E6%89%80%E6%9C%89%E6%9D%83%E5%88%A9-dc2626?style=for-the-badge)](#)
 
 
 [English](README.md) | **简体中文**
@@ -187,4 +187,8 @@ tests/       自动化与回归测试
 
 ## License
 
-MIT
+保留所有权利，本仓库不开放复用、二次分发或修改。
+
+欢迎阅读代码作为参考，但请不要 fork 之后删掉人工确认这一步，把它改成自动提交工具，这样做违背了这个项目本身想强调的学术诚信原则。如果你想做类似的东西，建议自己重新实现，并且保留真正需要学生确认才能提交的步骤。
+
+使用这个扩展的风险由使用者自行承担，请遵守 Monash 的出勤、学术诚信与 IT 相关政策。
