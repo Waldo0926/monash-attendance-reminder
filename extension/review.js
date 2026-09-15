@@ -4,8 +4,14 @@ const submit = document.querySelector("#submit");
 
 function escapeHtml(value) { return String(value || "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 
+function portalCompleted(item) {
+  return Boolean(item?.completed)
+    || item?.confidence === "completed"
+    || /[?&]mah_completed=1(?:&|#|$)/.test(String(item?.entryUrl || ""));
+}
+
 function itemStatus(item) {
-  if (item.completed || item.confidence === "completed") return { key: "completed", label: "已签到" };
+  if (portalCompleted(item)) return { key: "completed", label: "已签到" };
   if (item.confidence === "high") return { key: "high", label: "高可信" };
   if (item.confidence === "review") return { key: "review", label: "请核对" };
   return { key: "missing", label: "未找到" };
@@ -17,6 +23,14 @@ function codeConfidence(item) {
   return "missing";
 }
 
+function attendanceSource(item) {
+  if (item.attendanceSourceUrl) return item.attendanceSourceUrl;
+  if (portalCompleted(item) && item.attendanceDate?.key) {
+    return `https://attendance.monash.edu.my/student/Units.aspx#${encodeURIComponent(item.attendanceDate.key)}`;
+  }
+  return "";
+}
+
 function sourceLinks(item, completed) {
   const links = [];
   const seen = new Set();
@@ -26,7 +40,7 @@ function sourceLinks(item, completed) {
     seen.add(value);
     links.push(`<a href="${escapeHtml(value)}" target="_blank">${label} ↗</a>`);
   };
-  if (completed) add(item.attendanceSourceUrl, "打开 Attendance");
+  if (completed) add(attendanceSource(item), "打开 Attendance");
   add(item.codeSourceUrl, "打开代码来源");
   if (!links.length) add(item.sourceUrl, completed ? "打开 Attendance" : "打开来源");
   return links.length ? `<div class="source-links">${links.join(" · ")}</div>` : "";
@@ -40,7 +54,7 @@ async function render() {
   }
   document.querySelector("#title").textContent = latestScan.week ? `Week ${latestScan.week} 签到确认` : "过去一周签到确认";
   const items = latestScan.items || [];
-  const completedCount = items.filter((item) => item.completed || item.confidence === "completed").length;
+  const completedCount = items.filter(portalCompleted).length;
   const foundCodeCount = items.filter((item) => item.code && codeConfidence(item) === "high").length;
   let reconciliationNote = "";
   if (latestScan.reconciliation?.status === "complete") {
@@ -108,7 +122,7 @@ document.querySelector("#rescan").addEventListener("click", async () => {
 submit.addEventListener("click", async () => {
   const { latestScan } = await chrome.storage.local.get("latestScan");
   const selectedIds = new Set([...document.querySelectorAll(".pick:not(:disabled):checked")].map((input) => input.dataset.id));
-  const items = latestScan.items.filter((item) => !item.completed && item.confidence !== "completed" && selectedIds.has(item.id));
+  const items = latestScan.items.filter((item) => !portalCompleted(item) && selectedIds.has(item.id));
   if (!items.length) {
     document.querySelector("#submitStatus").textContent = "没有需要提交的签到记录。已签到课程不会重复提交。";
     updateSubmit();
