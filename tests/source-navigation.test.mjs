@@ -16,8 +16,8 @@ test("keeps the automatic source order Gmail -> Ed -> Moodle", async () => {
 test("best-effort switches Gmail search from Most relevant to Most recent", async () => {
   const source = await text("content.js");
   assert.match(source, /preferGmailMostRecent/);
-  assert.match(source, /showing\s\+most\s\+relevant/);
-  assert.match(source, /most\s\+recent/);
+  assert.ok(source.includes("showing\\s+most\\s+relevant"));
+  assert.ok(source.includes("most\\s+recent"));
   assert.match(source, /menuitemradio/);
 });
 
