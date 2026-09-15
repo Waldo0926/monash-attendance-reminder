@@ -8,6 +8,12 @@ function codeConfidence(item) {
   return "missing";
 }
 
+function portalCompleted(item) {
+  return Boolean(item?.completed)
+    || item?.confidence === "completed"
+    || /[?&]mah_completed=1(?:&|#|$)/.test(String(item?.entryUrl || ""));
+}
+
 async function refresh() {
   const { latestScan } = await chrome.storage.local.get("latestScan");
   if (!latestScan) {
@@ -17,7 +23,7 @@ async function refresh() {
   }
   const items = latestScan.items || [];
   const found = items.filter((item) => item.code && codeConfidence(item) === "high").length;
-  const completed = items.filter((item) => item.completed || item.confidence === "completed").length;
+  const completed = items.filter(portalCompleted).length;
   const finalised = latestScan.reconciliation?.status === "complete";
   summary.textContent = `过去 7 天 · 已签到 ${completed} 节 · 找到代码 ${found}/${items.length}`;
   detail.textContent = `上次检查：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")}${finalised ? " · 最终核对完成" : " · 等待最终核对"}`;
