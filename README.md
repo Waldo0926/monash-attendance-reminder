@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> Current extension build: **v1.3.21** — the final reconciliation flow now reads usable Attendance / Moodle DOMs without requiring Chrome tabs to reach `complete`, reads Attendance date pages sequentially to reduce stuck background loads, preserves already-completed Attendance rows in the review page, and prioritises already-discovered Moodle course pages before falling back to `My units` / Dashboard discovery.
+> Current extension build: **v1.3.23** — completed Attendance rows are now retained from first-pass discovery through final reconciliation, synthetic completed-row links are distinguished from real pending `Entry.aspx` links, already-open Attendance tabs are repaired after an extension reload, and **Save, then test now** runs the same final reconciliation used by the popup/review flow before reporting results.
 
 A configurable Chrome extension that discovers recent classes from Monash Attendance, finds attendance codes from Gmail, Moodle, and Ed, reminds students, and submits only after confirmation.
 
@@ -20,7 +20,7 @@ The bundled OCR worker is loaded directly from the extension package (rather tha
 4. Searches the signed-in Gmail account first, then Ed, then Moodle for unresolved classes. Attendance-code tables posted as images can be read locally with bundled OCR.
 5. Matches five-character attendance codes against the course, class label, activity date, class number, and time where available.
 6. Sends a system notification and opens a review page when clicked.
-7. Submits only the rows selected by the student after the student ticks the explicit attendance declaration.
+7. Submits only the rows selected by the student after the student ticks the explicit attendance declaration. Completed rows are never placed on the submission path.
 
 Reminder times use the **current system timezone of the computer running Chrome**. The timezone is detected automatically rather than being fixed to Malaysia.
 
@@ -29,6 +29,8 @@ Reminder times use the **current system timezone of the computer running Chrome*
 Keep Monash Attendance, Gmail, Moodle, and Ed signed in to the same Chrome profile. Leave **Automatically discover classes from Attendance** enabled. No Week 1 date or manual course list is required.
 
 The extension checks activities whose Attendance date is up to seven days old, inclusive of today and the date exactly seven days earlier. It only prepares a review list; it never submits without the student's explicit attendance declaration and confirmation.
+
+Completed rows are given a per-session discovery identity so multiple completed activities on the same date remain separate. During final reconciliation, synthetic discovery links carrying `mah_completed=1` are treated as completed evidence rather than as real submission links; genuine `Entry.aspx` links remain pending activities.
 
 For unresolved Moodle classes, the final reconciliation step follows already-discovered course pages first, then recent Week / section links, then Attendance activities. If no usable course page was discovered earlier, it falls back to `https://learning.monash.edu/my/courses.php` and the Moodle dashboard to locate the unit.
 
@@ -54,7 +56,7 @@ There are intentionally **no default FIT3162 / FIT2102 / FIT2109 routes**. Those
 6. Open the extension settings.
 7. Keep automatic Attendance discovery enabled and set the reminder times.
 8. Keep Gmail, Moodle, Ed, and Monash Attendance signed in in the same Chrome profile.
-9. Click **Save, then test now** and review the detected classes and codes.
+9. Click **Save, then test now** and review the detected classes and codes. The test now waits for final Attendance reconciliation before reporting its final counts.
 
 After updating the repository locally, return to `chrome://extensions` and reload the extension. The displayed extension version should match `extension/manifest.json`.
 
@@ -78,7 +80,7 @@ OCR runs locally inside the extension. Tesseract's worker, WebAssembly core, and
 - A code is never proof that the student attended. Only submit a record for a class actually attended.
 - The confirmation page asks for the attendance declaration every time. It is intentionally not an unattended auto-submit bot.
 - Automatic matching depends on the course/activity labels exposed by Attendance and the wording in the source. Ambiguous matches remain unchecked for review.
-- Some Monash pages can visibly render usable content while Chrome still reports the tab as `loading`. v1.3.21 reads the usable DOM directly instead of requiring a `complete` state, but a genuinely unavailable or logged-out page can still fail.
+- Some Monash pages can visibly render usable content while Chrome still reports the tab as `loading`. The final reconciliation reads a usable DOM directly instead of requiring a `complete` state, but a genuinely unavailable or logged-out page can still fail.
 
 ## Test
 
