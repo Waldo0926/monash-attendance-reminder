@@ -20,6 +20,7 @@ test("completed-row shim never replaces a real pending Entry.aspx row", () => {
   assert.match(shim, /row\.querySelector\("a\[href\*='Entry\.aspx'\]"\)\) continue/);
   assert.match(shim, /completionClue\(rowClue\(row\)\)/);
   assert.match(shim, /mah_completed/);
+  assert.match(shim, /mah_id/);
   assert.match(shim, /Entry\.aspx-completed/);
 });
 
