@@ -35,7 +35,7 @@ test("review and popup never submit completed rows", () => {
   assert.match(review, /function portalCompleted\(item\)/);
   assert.match(review, /latestScan\.items\.filter\(\(item\) => !portalCompleted\(item\)/);
   assert.match(popup, /function portalCompleted\(item\)/);
-  assert.match(popup, /items\.filter\(portalCompleted\)/);
+  assert.match(popup, /\.filter\(portalCompleted\)/);
 });
 
 test("settings test flow does not stop after the preliminary SCAN_ALL result", () => {

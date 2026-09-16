@@ -56,7 +56,7 @@ test("reports image content type, byte length and magic bytes when decoding fail
 
 test("manifest keeps OCR in an offscreen document with local workers and WebAssembly enabled", async () => {
   const manifest = JSON.parse(await text("manifest.json"));
-  assert.equal(manifest.version, "1.3.25");
+  assert.equal(manifest.version, "1.3.26");
   assert.ok(manifest.permissions.includes("offscreen"));
   assert.match(manifest.content_security_policy.extension_pages, /wasm-unsafe-eval/);
   assert.match(manifest.content_security_policy.extension_pages, /worker-src 'self'/);

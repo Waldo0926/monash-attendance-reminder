@@ -1,4 +1,4 @@
-import { sendMessageWithTimeout } from "./shared.js";
+import { sendMessageWithTimeout, weekBucket } from "./shared.js";
 
 const summary = document.querySelector("#summary");
 const detail = document.querySelector("#detail");
@@ -24,10 +24,15 @@ async function refresh() {
     return;
   }
   const items = latestScan.items || [];
-  const found = items.filter((item) => item.code && codeConfidence(item) === "high").length;
-  const completed = items.filter(portalCompleted).length;
+  const thisWeek = items.filter((item) => weekBucket(item) === "thisWeek");
+  const pastWeeks = items.filter((item) => weekBucket(item) !== "thisWeek");
+  const thisWeekFound = thisWeek.filter((item) => item.code && codeConfidence(item) === "high").length;
+  const pastCompleted = pastWeeks.filter(portalCompleted).length;
   const finalised = latestScan.reconciliation?.status === "complete";
-  summary.textContent = `过去 7 天 · 已签到 ${completed} 节 · 找到代码 ${found}/${items.length}`;
+  // Keep this week's "still looking for the code" separate from last week's "already
+  // attended" - both used to collapse into one "已签到 X 节" number, which made a perfectly
+  // normal this-week wait look identical to an actual past-week gap.
+  summary.textContent = `本周找到代码 ${thisWeekFound}/${thisWeek.length}${pastWeeks.length ? ` · 上周已签到 ${pastCompleted}/${pastWeeks.length}` : ""}`;
   detail.textContent = `上次检查：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")}${finalised ? " · 最终核对完成" : " · 等待最终核对"}`;
 }
 
@@ -54,10 +59,11 @@ scanButton.addEventListener("click", async () => {
   try {
     final = await sendMessageWithTimeout({ type: "RUN_FINAL_RECONCILIATION" });
   } catch (error) {
+    // Do not call refresh() here: it would overwrite this message with the not-yet-
+    // reconciled summary and hide the fact that the background work may still be running.
     scanButton.disabled = false;
     scanButton.textContent = "核对超时，重试";
     detail.textContent = error.message;
-    await refresh();
     return;
   }
   scanButton.disabled = false;

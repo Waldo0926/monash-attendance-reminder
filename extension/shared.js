@@ -471,7 +471,34 @@ export async function loadSettings() {
 // timeout-bounded internally, so anything past a generous ceiling here means the service
 // worker was killed or stopped responding, not that the scan is still progressing. Surface
 // that as a normal failure instead of leaving the UI stuck on "正在..." indefinitely.
-export function sendMessageWithTimeout(message, ms = 150000) {
+// "未找到" alone is ambiguous: for this week it just means the teacher hasn't posted the
+// code yet (normal, keep checking), but for a past week it would read like a missed class or
+// a broken scan. Every UI surface labels status by which week it belongs to instead of using
+// one generic word for both situations.
+export function startOfWeek(date) {
+  const value = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const sinceMonday = (value.getDay() + 6) % 7; // getDay(): 0 = Sunday
+  value.setDate(value.getDate() - sinceMonday);
+  return value;
+}
+
+export function weekBucket(item, now = new Date()) {
+  const iso = item?.attendanceDate?.iso;
+  if (!iso) return "";
+  const itemDate = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(itemDate.getTime())) return "";
+  const thisMonday = startOfWeek(now);
+  if (itemDate >= thisMonday) return "thisWeek";
+  const lastMonday = new Date(thisMonday);
+  lastMonday.setDate(lastMonday.getDate() - 7);
+  return itemDate >= lastMonday ? "lastWeek" : "earlier";
+}
+
+export function weekPrefix(bucket) {
+  return bucket === "thisWeek" ? "本周" : bucket === "lastWeek" ? "上周" : bucket === "earlier" ? "更早" : "";
+}
+
+export function sendMessageWithTimeout(message, ms = 300000) {
   return Promise.race([
     chrome.runtime.sendMessage(message),
     new Promise((_, reject) => setTimeout(() => reject(new Error("扩展没有响应，请重试（可能是后台进程被浏览器回收）")), ms))

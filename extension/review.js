@@ -1,4 +1,4 @@
-import { sendMessageWithTimeout } from "./shared.js";
+import { sendMessageWithTimeout, weekBucket, weekPrefix } from "./shared.js";
 
 const results = document.querySelector("#results");
 const attended = document.querySelector("#attended");
@@ -13,10 +13,11 @@ function portalCompleted(item) {
 }
 
 function itemStatus(item) {
-  if (portalCompleted(item)) return { key: "completed", label: "已签到" };
-  if (item.confidence === "high") return { key: "high", label: "高可信" };
-  if (item.confidence === "review") return { key: "review", label: "请核对" };
-  return { key: "missing", label: "未找到" };
+  const prefix = weekPrefix(weekBucket(item));
+  if (portalCompleted(item)) return { key: "completed", label: `${prefix}已签到` };
+  if (item.confidence === "high") return { key: "high", label: `${prefix}高可信` };
+  if (item.confidence === "review") return { key: "review", label: `${prefix}请核对` };
+  return { key: "missing", label: `${prefix}未找到` };
 }
 
 function codeConfidence(item) {
@@ -68,6 +69,7 @@ async function render() {
   results.innerHTML = items.map((item) => {
     const status = itemStatus(item);
     const completed = status.key === "completed";
+    const bucket = weekBucket(item);
     const codeLevel = codeConfidence(item);
     const autoChecked = !completed && item.code && codeLevel === "high";
     const checkboxDisabled = completed || !item.code;
@@ -78,11 +80,18 @@ async function render() {
       ? (item.code ? escapeHtml(item.code) : "✓ 已完成")
       : escapeHtml(item.code || "—");
     const codeTitle = completed && item.code ? "已签到；同时保留已找到的签到码" : "";
+    // A non-this-week class that is still "未找到" is not the normal wait-for-the-teacher
+    // case - it usually means Attendance itself hasn't shown it as completed, or the scan
+    // couldn't reach it. Make that distinction explicit instead of using the same generic
+    // hint for both situations.
+    const missingHint = bucket === "thisWeek"
+      ? "来源页面没有匹配到这个班次，老师可能还没发布签到码，请稍后再查。"
+      : "来源页面没有匹配到这个班次，且 Attendance 也没显示已完成 —— 请手动打开来源确认是否真的漏签。";
     return `
     <article class="card ${completed ? "completed-card" : ""}">
       <div class="row"><label><input class="pick" data-id="${escapeHtml(item.id)}" type="checkbox" ${autoChecked ? "checked" : ""} ${checkboxDisabled ? "disabled" : ""}> ${escapeHtml(item.course)} · ${escapeHtml(item.session)}</label><span class="status ${status.key}">${status.label}</span></div>
       <div class="row"><p>${escapeHtml(item.day)} ${escapeHtml(item.time)}</p><span class="code ${completed && !item.code ? "completed-code" : ""}" title="${escapeHtml(codeTitle)}">${codeText}</span></div>
-      ${context ? `<div class="context">${escapeHtml(context)}</div>` : `<p class="muted">来源页面没有匹配到这个班次，请手动打开来源检查。</p>`}
+      ${context ? `<div class="context">${escapeHtml(context)}</div>` : `<p class="muted">${missingHint}</p>`}
       ${sourceLinks(item, completed)}
     </article>`;
   }).join("");
@@ -122,9 +131,11 @@ document.querySelector("#rescan").addEventListener("click", async () => {
   try {
     final = await sendMessageWithTimeout({ type: "RUN_FINAL_RECONCILIATION" });
   } catch (error) {
-    results.innerHTML = `<section class="card empty"><h2>最终核对超时</h2><p>${escapeHtml(error.message)}，正在显示未核对的初步结果。</p></section>`;
-    await render();
-    updateSubmit();
+    // The background reconciliation may still be running even though the client gave up
+    // waiting on it; re-rendering here would silently overwrite this message with the
+    // not-yet-reconciled data and make the timeout invisible. Leave it on screen instead -
+    // the user can re-open this page (or click 重新查找 again) once it has had time to finish.
+    results.innerHTML = `<section class="card empty"><h2>最终核对超时</h2><p>${escapeHtml(error.message)}。后台可能仍在继续核对，请稍等片刻后重新打开本页面，或再次点击"重新查找"。</p></section>`;
     return;
   }
   if (!final?.ok) {

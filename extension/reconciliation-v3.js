@@ -230,7 +230,7 @@ async function readAttendancePortal(lookbackDays) {
   // Malaysia portal to leave some tabs permanently in a loading state.
   for (const date of recentDates(lookbackDays)) {
     const url = `https://attendance.monash.edu.my/student/Units.aspx#${date.key}`;
-    const page = await withTimeout(runOnPage(url, extractAttendanceRows, [date.key], 3), 20000, "该日期查询超时")
+    const page = await withTimeout(runOnPage(url, extractAttendanceRows, [date.key], 3), 55000, "该日期查询超时")
       .catch((error) => ({ ok: false, url, error: error.message }));
     const rows = (page.value?.sessions || []).map((row) => ({
       ...row,
@@ -368,7 +368,7 @@ async function discoverCourseRoot(course) {
         if (text.toUpperCase().includes(wanted)) matches.push(anchor.href.replace(/([?&]id=\d+).*$/, "$1"));
       }
       return { ready: Boolean(document.body), matches: [...new Set(matches)] };
-    }, [course], 3), 20000, "该页面查询超时").catch((error) => ({ ok: false, url: indexUrl, error: error.message }));
+    }, [course], 3), 55000, "该页面查询超时").catch((error) => ({ ok: false, url: indexUrl, error: error.message }));
     if (page.value?.matches?.length) return page.value.matches[0];
   }
   return "";
@@ -391,7 +391,7 @@ async function resolveMoodleCourse(result, course) {
     if (!url || visited.has(url)) continue;
     visited.add(url);
     pagesRead += 1;
-    const page = await withTimeout(runOnPage(url, extractMoodleEvidence, [], 4), 20000, "该页面查询超时")
+    const page = await withTimeout(runOnPage(url, extractMoodleEvidence, [], 4), 65000, "该页面查询超时")
       .catch((error) => ({ ok: false, url, error: error.message }));
     const evidence = page.value || { rows: [], attendanceLinks: [], sectionLinks: [] };
     result.scans.push({
