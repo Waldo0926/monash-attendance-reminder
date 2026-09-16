@@ -321,10 +321,28 @@ test("recovers a five-character code when OCR inserts whitespace inside it", () 
 
 
 test("seven-day lookback includes the activity exactly seven days ago", () => {
+  // 2026-09-14 is a Monday, so the window also extends forward through that week's Sunday
+  // (2026-09-20) - Attendance can list a day's sessions before that day happens, and a class
+  // later in the same week must not look like it vanished just because "now" hasn't reached it.
   const dates = recentAttendanceDates(new Date(2026, 8, 14, 20, 0, 0), 7);
   assert.equal(dates[0].iso, "2026-09-07");
-  assert.equal(dates.at(-1).iso, "2026-09-14");
-  assert.equal(dates.length, 8);
+  assert.equal(dates.at(-1).iso, "2026-09-20");
+  assert.equal(dates.length, 14);
+});
+
+test("the lookback window extends forward through the end of the current week", () => {
+  // 2026-09-16 is a Wednesday: Thursday and Friday of the same week are still ahead of today
+  // but must still be in the window so their (possibly already-published) rows get read.
+  const dates = recentAttendanceDates(new Date(2026, 8, 16, 12, 0, 0), 7);
+  const isos = dates.map((date) => date.iso);
+  assert.ok(isos.includes("2026-09-17"), "Thursday of the current week must be included");
+  assert.ok(isos.includes("2026-09-20"), "Sunday of the current week must be included");
+  assert.ok(!isos.includes("2026-09-21"), "the following Monday must not be included");
+});
+
+test("the lookback window does not extend forward when today is already Sunday", () => {
+  const dates = recentAttendanceDates(new Date("2026-09-13T12:00:00+08:00"), 7);
+  assert.equal(dates.at(-1).iso, "2026-09-13");
 });
 
 test("matches bare Applied activity labels as a session type", () => {

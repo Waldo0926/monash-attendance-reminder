@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, loadSettings, validSchedule } from "./shared.js";
+import { DEFAULT_SETTINGS, loadSettings, sendMessageWithTimeout, validSchedule } from "./shared.js";
 
 let settings;
 const coursesRoot = document.querySelector("#courses");
@@ -244,8 +244,28 @@ coursesRoot.addEventListener("click", (event) => {
 document.querySelector("#save").addEventListener("click", collectAndSave);
 document.querySelector("#scan").addEventListener("click", async () => {
   if (!(await collectAndSave())) return;
-  status.textContent = "正在检查，完成后会弹出系统通知。";
-  await chrome.runtime.sendMessage({ type: "SCAN_ALL" });
+  // SCAN_ALL now chains the preliminary scan and the final reconciliation inside one
+  // background message handler instead of requiring this page to send a follow-up
+  // RUN_FINAL_RECONCILIATION message. Two round trips meant this page's own JS had to stay
+  // alive long enough to send the second one - closing this tab (or, for the equivalent
+  // popup.js flow, closing the popup) mid-scan silently dropped reconciliation entirely.
+  status.textContent = "正在检查 Gmail / Ed / Moodle 与 Attendance，并做最终核对…";
+  let scan;
+  try {
+    scan = await sendMessageWithTimeout({ type: "SCAN_ALL" });
+  } catch (error) {
+    status.textContent = `检查超时：${error.message}`;
+    return;
+  }
+  if (!scan?.ok) {
+    status.textContent = `检查失败：${scan?.error || "未知错误"}`;
+    return;
+  }
+  const result = scan.result || {};
+  const items = result.items || [];
+  status.textContent = result.reconciliation?.status === "failed"
+    ? `最终核对未完成：${result.reconciliation.error || "未知错误"}`
+    : `检查完成：识别 ${items.length} 节，已签到 ${items.filter((item) => item.completed).length} 节，找到代码 ${items.filter((item) => item.code).length} 个。`;
 });
 document.querySelector("#import").addEventListener("click", () => document.querySelector("#importFile").click());
 document.querySelector("#importFile").addEventListener("change", async (event) => {

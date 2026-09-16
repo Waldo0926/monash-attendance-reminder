@@ -56,7 +56,7 @@ test("reports image content type, byte length and magic bytes when decoding fail
 
 test("manifest keeps OCR in an offscreen document with local workers and WebAssembly enabled", async () => {
   const manifest = JSON.parse(await text("manifest.json"));
-  assert.equal(manifest.version, "1.3.13");
+  assert.equal(manifest.version, "1.3.34");
   assert.ok(manifest.permissions.includes("offscreen"));
   assert.match(manifest.content_security_policy.extension_pages, /wasm-unsafe-eval/);
   assert.match(manifest.content_security_policy.extension_pages, /worker-src 'self'/);
@@ -174,7 +174,7 @@ test("v1.3.11 hardens course ownership, group-number matching, and review safety
   assert.match(shared, /numberConflict/);
   assert.match(ocr, /if \(normalized\.wideShort\)/);
   assert.match(ocr, /old unconditional per-row loop was noisy and expensive/);
-  assert.match(review, /item\.code && item\.confidence === "high"/);
+  assert.match(review, /item\.code && codeConfidence\(item\) === "high"/);
 });
 
 

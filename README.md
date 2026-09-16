@@ -7,6 +7,8 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
+> Current extension build: **v1.3.23** — completed Attendance rows are retained through final reconciliation, synthetic completed-row links are distinguished from genuine pending `Entry.aspx` links, already-open Attendance tabs are repaired after an extension reload, and **Save, then test now** waits for final reconciliation before reporting results.
+
 A privacy-focused Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 
 The default mode does **not** require a manually entered timetable. It reads recent activities from the Monash Attendance account already signed in to the same Chrome profile, keeps completed activities visible, and searches the student's signed-in Monash learning services for matching attendance codes.
@@ -17,6 +19,7 @@ The default mode does **not** require a manually entered timetable. It reads rec
 
 - Discovers recent activities from **Monash Attendance** automatically.
 - Keeps activities that Attendance already marks as completed and shows them as completed instead of hiding them.
+- Keeps multiple completed activities on the same date separate by course, activity, class number, and time.
 - Searches for attendance codes in this order:
   1. **Gmail** — recent attendance-related messages.
   2. **Ed Discussion** — recent attendance posts for courses that use Ed.
@@ -27,6 +30,7 @@ The default mode does **not** require a manually entered timetable. It reads rec
 - Marks uncertain matches for manual review instead of silently guessing.
 - Sends Chrome reminders at configurable times.
 - Requires an explicit attendance declaration before submission.
+- Never places a completed Attendance record on the submission path.
 - Supports a manual timetable only as an optional fallback.
 
 Reminder times use the **current system timezone of the computer running Chrome**.
@@ -55,10 +59,14 @@ Moodle
   ↓
 Match by available course / activity / class / date / time evidence
   ↓
+Final Attendance reconciliation
+  ↓
 Review page
   ↓
-Student confirmation
+Student confirmation for incomplete records only
 ```
+
+Completed rows discovered through the Attendance portal are assigned a stable per-session identity so several completed activities on the same date do not collapse into one result. A synthetic discovery link carrying `mah_completed=1` is treated only as completed-state evidence; a genuine `Entry.aspx` link remains a pending Attendance entry.
 
 ### Moodle fallback
 
@@ -88,9 +96,9 @@ A completed record is displayed as completed and cannot be submitted again. This
 7. Open the extension settings.
 8. Keep automatic Attendance discovery enabled and configure reminder times.
 9. Keep Gmail, Moodle, Ed, and Monash Attendance signed in to the same Chrome profile.
-10. Save the settings and use the test / re-scan option to review the detected activities and codes.
+10. Click **Save, then test now**. In v1.3.23 the test performs the preliminary scan and final Attendance reconciliation before reporting final counts.
 
-After updating the repository locally, return to `chrome://extensions` and reload the unpacked extension.
+After updating the repository locally, return to `chrome://extensions` and reload the unpacked extension. The displayed version should match `extension/manifest.json`.
 
 ## Manual timetable fallback
 
@@ -146,6 +154,7 @@ An attendance code is not proof that a student attended a class. For that reason
 - Expired login sessions still require the student to sign in again.
 - OCR can make mistakes, so image-derived results should be checked when marked for review.
 - Some units may publish attendance information differently from the currently supported patterns.
+- Some Monash pages can visibly render usable content while Chrome still reports a tab as `loading`; the final reconciliation reads the usable DOM directly, but a genuinely unavailable page can still fail.
 - The project cannot guarantee compatibility with every unit or every future Monash page layout.
 
 ## Development and testing
@@ -164,6 +173,8 @@ npm ci
 npm test
 npm run lint
 ```
+
+Regression coverage includes Gmail multi-account discovery, strict per-class matching, OCR packaging, Moodle fallback, completed-row retention, same-day multiple completed sessions, completed-vs-pending `Entry.aspx` handling, final-reconciliation flow, and no-resubmit safeguards.
 
 Pull requests also run automated checks through GitHub Actions.
 
@@ -185,8 +196,8 @@ Use it in accordance with Monash attendance, academic integrity, and IT policies
 
 ## License
 
-All rights reserved. This repository is not licensed for reuse, redistribution, or modification.
+Fellow Monash students are welcome to use this as-is (share the repo, help a friend load it into their own Chrome), but it is not licensed for modified redistribution, and please do not fork it, strip out the manual confirmation step, or turn it into an unattended auto-submit tool.
 
-You are welcome to read the code as a reference, but please do not fork it, strip out the manual confirmation step, or turn it into an unattended auto-submit tool. That would go directly against the academic-integrity point this project is trying to make. If you want to build something similar, write your own implementation and keep a real confirmation step in it.
+If you want to build something similar, write your own implementation and keep a real confirmation step in it - that's the academic-integrity point this project is trying to make, and the one thing that should never change.
 
 Use of this extension is entirely at your own risk and must follow Monash's attendance, academic-integrity, and IT policies.
