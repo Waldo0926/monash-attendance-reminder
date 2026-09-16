@@ -2,14 +2,14 @@
 
 [![类型](https://img.shields.io/badge/%E7%B1%BB%E5%9E%8B-Chrome_%E6%89%A9%E5%B1%95-2563eb?style=for-the-badge)](#)
 [![技术](https://img.shields.io/badge/%E6%8A%80%E6%9C%AF-JavaScript-7c3aed?style=for-the-badge)](#)
+[![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows_%7C_macOS_%7C_Linux-16a34a?style=for-the-badge)](#平台支持)
 [![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-%E4%BF%9D%E7%95%99%E6%89%80%E6%9C%89%E6%9D%83%E5%88%A9-dc2626?style=for-the-badge)](#)
-
 
 [English](README.md) | **简体中文**
 
 > 当前扩展版本：**v1.3.34** —— “扫描”和“最终核对”已合并成后台一次性完成，不再依赖 popup 或页面全程保持打开；状态按“本周 / 上周”分开显示，并新增“未开始”状态，避免提前发布的签到码被误当成可以立即提交；扫描范围会延伸到本周日，兼容会提前显示课程表的 Attendance 账号；关键步骤的日志会持久化存储，并直接显示在确认页面底部，不必打开开发者工具。
 
-一个注重隐私的 Chrome 扩展，帮助 Monash 学生自动发现近期需要处理的考勤活动，从 Gmail、Ed Discussion 和 Moodle 中寻找对应的 Attendance Code，在提交前集中核对，并且只会在学生明确确认后才提交。
+一个注重隐私、**跨平台**的 Chrome 扩展，帮助 Monash 学生自动发现近期需要处理的考勤活动，从 Gmail、Ed Discussion 和 Moodle 中寻找对应的 Attendance Code，在提交前集中核对，并且只会在学生明确确认后才提交。
 
 默认模式**不需要手动填写完整课表**。扩展会读取当前 Chrome Profile 已登录的 Monash Attendance 中的近期课程活动，同时保留已经完成签到的记录，再从当前已登录的 Monash 学习平台中寻找对应签到码。
 
@@ -38,6 +38,12 @@
 - 保留手动课表模式，作为自动发现失败时的备用方案。
 
 提醒时间使用**运行 Chrome 的电脑当前系统时区**。
+
+## 平台支持
+
+这个项目是 **Chrome 扩展 + 浏览器端 Web 配置器**，并不是 macOS 原生应用。只要桌面 Chrome/Chromium 环境支持项目所需的扩展 API，同一套安装和使用方式可用于 **Windows、macOS 和 Linux**。
+
+扩展本身没有 macOS 专属运行时依赖。仓库中少量与 macOS 开发环境有关的注释或测试，仅用于开发/回归场景，不代表用户端只能在 macOS 上运行。
 
 ## 自动发现流程
 
@@ -92,7 +98,7 @@ Moodle 查找不只是停留在 `My units` 页面。
 - **请核对**：找到候选签到码，但需要学生自己确认；
 - **未找到**：本周没找到大多是正常等待（老师可能还没发布）；上周还是没找到，代表 Attendance 也没显示完成，建议手动打开来源确认是否真的漏签。
 
-## Chrome 安装方法
+## Chrome 安装方法（Windows / macOS / Linux）
 
 1. 下载或克隆本仓库。
 2. 打开 `chrome://extensions`。
@@ -109,7 +115,7 @@ Moodle 查找不只是停留在 `My units` 页面。
 
 ## 导出本学期历史记录
 
-Attendance 通常只能补填到大约一周前，更早忘记填的课没法再从那边补交。设置页最下面的"导出本学期历史记录"会重新跑一遍从 Week 1 到今天的完整扫描（复用每周扫描同一套发现/匹配逻辑，并优先用已经缓存的签到码，减少重复搜索），把结果导出成一份 CSV 表格，方便留底或者发给任课老师申请人工补签。需要先在上面填好 Week 1 的星期一日期；学期跨度较长时可能要跑几分钟。
+Attendance 通常只能补填到大约一周前，更早忘记填的课没法再从那边补交。设置页最下面的“导出本学期历史记录”会重新跑一遍从 Week 1 到今天的完整扫描（复用每周扫描同一套发现/匹配逻辑，并优先用已经缓存的签到码，减少重复搜索），把结果导出成一份 CSV 表格，方便留底或者发给任课老师申请人工补签。需要先在上面填好 Week 1 的星期一日期；学期跨度较长时可能要跑几分钟。
 
 ## 手动课表模式（备用）
 
