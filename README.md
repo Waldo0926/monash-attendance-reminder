@@ -196,8 +196,8 @@ Use it in accordance with Monash attendance, academic integrity, and IT policies
 
 ## License
 
-All rights reserved. This repository is not licensed for reuse, redistribution, or modification.
+Fellow Monash students are welcome to use this as-is (share the repo, help a friend load it into their own Chrome), but it is not licensed for modified redistribution, and please do not fork it, strip out the manual confirmation step, or turn it into an unattended auto-submit tool.
 
-You are welcome to read the code as a reference, but please do not fork it, strip out the manual confirmation step, or turn it into an unattended auto-submit tool. That would go directly against the academic-integrity point this project is trying to make. If you want to build something similar, write your own implementation and keep a real confirmation step in it.
+If you want to build something similar, write your own implementation and keep a real confirmation step in it - that's the academic-integrity point this project is trying to make, and the one thing that should never change.
 
 Use of this extension is entirely at your own risk and must follow Monash's attendance, academic-integrity, and IT policies.
