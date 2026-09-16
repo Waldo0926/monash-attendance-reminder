@@ -105,6 +105,10 @@ A completed record is displayed as completed and cannot be submitted again. Ever
 
 After updating the repository locally, return to `chrome://extensions` and reload the unpacked extension. The displayed version should match `extension/manifest.json`.
 
+## Exporting this semester's history
+
+Attendance usually only accepts a backdated submission up to about a week ago, so a class forgotten earlier in the semester can't be fixed there. The "Export semester history" button at the bottom of the settings page re-runs the full discovery/matching pipeline from Week 1 through today (restoring already-cached codes first to avoid re-searching everything), and downloads the result as a CSV - useful as a record to keep, or to send a unit coordinator when asking for a manual correction. Requires Week 1's Monday to be set above, and can take a few minutes for a long semester.
+
 ## Manual timetable fallback
 
 Automatic discovery is the recommended mode, but a manual timetable is still available as a fallback.

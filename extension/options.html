@@ -54,6 +54,13 @@
       <input type="file" id="importFile" accept="application/json" hidden>
     </div>
     <p id="status"></p>
+
+    <section class="card stack">
+      <h2>本学期历史记录</h2>
+      <p class="muted">Attendance 只能补填到大约一周前，忘记填的更早的课没法再从那边补交。这个功能会重新扫一遍从 Week 1 到今天的每一节课，尽量把当时的签到码也找回来，导出成一份表格给你留底（比如发给任课老师申请人工补签）。课程跨度较长时可能要跑好几分钟，请耐心等待、不要关闭本页面。</p>
+      <button class="secondary" id="exportHistory">导出本学期历史记录</button>
+      <p id="historyStatus" class="muted"></p>
+    </section>
   </main>
   <script type="module" src="options.js"></script>
 </body>

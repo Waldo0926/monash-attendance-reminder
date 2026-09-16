@@ -47,7 +47,7 @@ test("SCAN_ALL chains final reconciliation in the background instead of relying 
   // was wrong. The background must do both steps inside the one SCAN_ALL handler so no caller
   // needs to stay alive for a second message.
   const serviceWorker = read("../extension/service-worker.js");
-  assert.match(serviceWorker, /import\s*\{\s*reconcileAndStore\s*\}\s*from\s*"\.\/reconciliation-v3\.js"/);
+  assert.match(serviceWorker, /import\s*\{[^}]*\breconcileAndStore\b[^}]*\}\s*from\s*"\.\/reconciliation-v3\.js"/);
   const scanAllHandler = serviceWorker.slice(serviceWorker.indexOf('message.type === "SCAN_ALL"'));
   assert.match(scanAllHandler.slice(0, 1500), /await reconcileAndStore\(result\)/);
 

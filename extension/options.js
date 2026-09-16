@@ -285,6 +285,67 @@ document.querySelector("#importFile").addEventListener("change", async (event) =
   }
 });
 
+function csvEscape(value) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadHistoryCsv(items) {
+  const header = ["课程", "班次", "星期", "日期", "时间", "状态", "签到码", "可信度", "来源"];
+  const rows = items.map((item) => [
+    item.course || "",
+    item.session || "",
+    item.day || "",
+    item.attendanceDate?.iso || "",
+    item.time || "",
+    item.completed ? "已签到" : "未签到",
+    item.code || "",
+    item.codeConfidence || item.confidence || "",
+    item.sourceUrl || item.codeSourceUrl || ""
+  ]);
+  const csv = [header, ...rows].map((row) => row.map(csvEscape).join(",")).join("\r\n");
+  // The BOM keeps Excel from mangling the Chinese headers when it guesses the file's encoding.
+  const byteOrderMark = String.fromCharCode(0xfeff);
+  const blob = new Blob([byteOrderMark + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `attendance-history-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.querySelector("#exportHistory").addEventListener("click", async () => {
+  const historyStatus = document.querySelector("#historyStatus");
+  if (!settings.weekOneMonday) {
+    historyStatus.textContent = "请先在上面填写并保存 Week 1 的星期一日期，再导出历史记录。";
+    return;
+  }
+  historyStatus.textContent = "正在扫描本学期历史记录，课程跨度长的话可能要跑好几分钟，请不要关闭本页面…";
+  let response;
+  try {
+    // A full-semester scan can take far longer than the usual weekly one - give it a generous
+    // ceiling rather than reusing sendMessageWithTimeout's shorter default.
+    response = await sendMessageWithTimeout({ type: "EXPORT_SEMESTER_HISTORY" }, 25 * 60 * 1000);
+  } catch (error) {
+    historyStatus.textContent = `导出超时：${error.message}`;
+    return;
+  }
+  if (!response?.ok) {
+    historyStatus.textContent = `导出失败：${response?.error || "未知错误"}`;
+    return;
+  }
+  if (!response.items.length) {
+    historyStatus.textContent = "没有找到任何历史记录，请确认 Week 1 日期填对了、且当天已经登录 Attendance。";
+    return;
+  }
+  downloadHistoryCsv(response.items);
+  const found = response.items.filter((item) => item.code).length;
+  historyStatus.textContent = `已导出 ${response.items.length} 节课，其中找到签到码 ${found} 个，请查看浏览器下载。`;
+});
+
 init().catch((error) => {
   settings = structuredClone(DEFAULT_SETTINGS);
   renderCourses();

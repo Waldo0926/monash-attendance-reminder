@@ -2,7 +2,7 @@ import { buildCodeEvidenceCache, codeConfidenceOf, matchStructuredAttendanceRows
 import { logDebug, mondayOf } from "./shared.js";
 
 const RECONCILIATION_VERSION = 4;
-const EVIDENCE_CACHE_KEY = "attendanceEvidenceCacheV4";
+export const EVIDENCE_CACHE_KEY = "attendanceEvidenceCacheV4";
 let running = false;
 
 function pause(ms) {
@@ -240,7 +240,7 @@ function extractAttendanceRows(targetDateKey) {
   return { ready: Boolean(document.body), sessions: sessions.map(({ key, ...row }) => row) };
 }
 
-async function readAttendancePortal(lookbackDays) {
+export async function readAttendancePortal(lookbackDays) {
   const sessions = [];
   const scans = [];
   // Sequential reads are deliberate: opening eight Attendance tabs at once caused the

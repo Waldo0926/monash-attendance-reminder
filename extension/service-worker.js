@@ -1,6 +1,7 @@
 import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek } from "./shared.js";
 import { gmailSearchBounds, pickGmailBase, prioritiseGmailThreads } from "./gmail-source.js";
-import { reconcileAndStore } from "./reconciliation-v3.js";
+import { EVIDENCE_CACHE_KEY, readAttendancePortal, reconcileAndStore } from "./reconciliation-v3.js";
+import { buildCodeEvidenceCache, mergePortalAttendance, needsCodeEvidence, restoreCodeEvidence } from "./reconciliation-core.js";
 
 const PRIMARY_ALARM = "attendance-primary";
 const BACKUP_ALARM = "attendance-backup";
@@ -60,6 +61,31 @@ async function waitForLoaded(tabId, timeoutMs = 25000) {
 
 function confidenceRank(confidence) {
   return confidence === "high" ? 2 : confidence === "review" ? 1 : 0;
+}
+
+// Match against each source page separately rather than one concatenated blob: joining texts
+// together let a code found near the end of one page's content "see" course names from the
+// start of the next page as nearby context, producing confident-looking matches that were
+// really just two unrelated pages bleeding into each other. Shared by the normal weekly scan
+// and the full-semester history export.
+function mergeSourceScanCodes(items, sourceScans) {
+  let result = items;
+  for (const scan of sourceScans) {
+    if (!scan.ok) continue;
+    const scoped = safeScopedAttendanceItems(result, scan);
+    if (!scoped.length) continue;
+    const matched = matchCodesToAttendance(scan.text, scoped.map(({ item }) => item));
+    const replacements = new Map();
+    matched.forEach((candidate, scopedIndex) => {
+      const index = scoped[scopedIndex].index;
+      const item = result[index];
+      if (candidate.code && confidenceRank(candidate.confidence) > confidenceRank(item.confidence)) {
+        replacements.set(index, { ...item, code: candidate.code, confidence: candidate.confidence, context: candidate.context, sourceUrl: scan.url });
+      }
+    });
+    result = result.map((item, index) => replacements.get(index) || item);
+  }
+  return result;
 }
 
 function unitScopedSource(url) {
@@ -431,26 +457,7 @@ async function scanAll(reason = "manual") {
   if (settings.autoDiscover !== false) {
     const discovered = await discoverAttendance(settings);
     const sourceScans = await automaticSourceScans(discovered.items, settings);
-    // Match against each source page separately rather than one concatenated blob: joining
-    // texts together let a code found near the end of one page's content "see" course names
-    // from the start of the next page as nearby context, producing confident-looking matches
-    // that were really just two unrelated pages bleeding into each other.
-    let items = discovered.items;
-    for (const scan of sourceScans) {
-      if (!scan.ok) continue;
-      const scoped = safeScopedAttendanceItems(items, scan);
-      if (!scoped.length) continue;
-      const matched = matchCodesToAttendance(scan.text, scoped.map(({ item }) => item));
-      const replacements = new Map();
-      matched.forEach((candidate, scopedIndex) => {
-        const index = scoped[scopedIndex].index;
-        const item = items[index];
-        if (candidate.code && confidenceRank(candidate.confidence) > confidenceRank(item.confidence)) {
-          replacements.set(index, { ...item, code: candidate.code, confidence: candidate.confidence, context: candidate.context, sourceUrl: scan.url });
-        }
-      });
-      items = items.map((item, index) => replacements.get(index) || item);
-    }
+    const items = mergeSourceScanCodes(discovered.items, sourceScans);
     // Keep only a summary of each scan: full page text for a dozen pages would blow past
     // chrome.storage.local's quota and make the whole save fail silently.
     const scans = sourceScans.map(({ ok, url, error, text, links, images, ocrText, ocrSelectedCount, ocrDetails, ocrError, gmailThreads, courses }) => ({
@@ -523,6 +530,54 @@ async function scanAll(reason = "manual") {
     requireInteraction: true
   });
   return result;
+}
+
+const SEMESTER_EXPORT_MAX_WEEKS = 20;
+
+// Attendance itself only accepts a submission up to about a week back, so a student who
+// forgot to fill one in earlier this semester has no way to fix it there. This does not try
+// to submit anything - it just rebuilds the whole semester's attendance/code picture (reusing
+// the exact same discovery pipeline as the weekly scan, just over a much wider date range) so
+// the student has a record they can download, e.g. to send their unit coordinator when asking
+// for a manual correction.
+async function buildSemesterHistory(settings) {
+  if (!settings?.weekOneMonday) {
+    throw new Error("请先在设置里填写 Week 1 的星期一日期，才能计算本学期的范围。");
+  }
+  const weekOneMonday = new Date(`${settings.weekOneMonday}T00:00:00`);
+  if (Number.isNaN(weekOneMonday.getTime())) {
+    throw new Error("Week 1 星期一的日期格式不对，请在设置里重新选择一次。");
+  }
+  const today = new Date();
+  const lookbackDays = Math.max(7, Math.round((today - weekOneMonday) / 86400000));
+  if (lookbackDays > SEMESTER_EXPORT_MAX_WEEKS * 7) {
+    throw new Error(`时间跨度超过 ${SEMESTER_EXPORT_MAX_WEEKS} 周，暂不支持一次性导出，请检查 Week 1 日期是否填错了。`);
+  }
+
+  await logDebug("semester history: reading Attendance portal", { lookbackDays });
+  const portal = await readAttendancePortal(lookbackDays);
+  let items = mergePortalAttendance([], portal.sessions);
+
+  // Codes already found by an earlier normal weekly scan are cached - restoring them first
+  // means this only has to go searching Gmail/Ed/Moodle for whatever the cache doesn't
+  // already have, instead of re-finding everything from scratch every time.
+  const stored = await chrome.storage.local.get(EVIDENCE_CACHE_KEY);
+  items = restoreCodeEvidence(items, stored[EVIDENCE_CACHE_KEY] || {});
+
+  const stillMissing = items.filter(needsCodeEvidence).length;
+  await logDebug("semester history: searching sources for remaining codes", { itemCount: items.length, stillMissing });
+  if (stillMissing) {
+    const sourceScans = await automaticSourceScans(items.filter(needsCodeEvidence), settings);
+    items = mergeSourceScanCodes(items, sourceScans);
+  }
+
+  const cache = buildCodeEvidenceCache(items, stored[EVIDENCE_CACHE_KEY] || {});
+  await chrome.storage.local.set({ [EVIDENCE_CACHE_KEY]: cache });
+
+  return items.sort((a, b) =>
+    String(a.attendanceDate?.iso || "").localeCompare(String(b.attendanceDate?.iso || ""))
+    || String(a.course || "").localeCompare(String(b.course || ""))
+  );
 }
 
 async function submitOne(item, settings) {
@@ -620,6 +675,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       await chrome.storage.local.set({ lastSubmission: { at: new Date().toISOString(), outcomes: [...(lastSubmission?.outcomes || []), ...outcomes] } });
       sendResponse({ ok: outcomes.every((item) => item.ok), outcomes });
+    })();
+    return true;
+  }
+  if (message.type === "EXPORT_SEMESTER_HISTORY") {
+    (async () => {
+      try {
+        const settings = await loadSettings();
+        const items = await buildSemesterHistory(settings);
+        sendResponse({ ok: true, items });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
     })();
     return true;
   }
