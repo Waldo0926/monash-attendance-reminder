@@ -1,5 +1,6 @@
 import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek } from "./shared.js";
 import { gmailSearchBounds, pickGmailBase, prioritiseGmailThreads } from "./gmail-source.js";
+import { reconcileAndStore } from "./reconciliation-v3.js";
 
 const PRIMARY_ALARM = "attendance-primary";
 const BACKUP_ALARM = "attendance-backup";
@@ -573,7 +574,22 @@ chrome.notifications.onClicked.addListener(() => chrome.tabs.create({ url: chrom
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "SCAN_ALL") {
-    scanAll("manual").then((result) => sendResponse({ ok: true, result })).catch((error) => sendResponse({ ok: false, error: error.message }));
+    // Final reconciliation used to be a second message the caller (popup.js or review.js)
+    // had to send after this one resolved. A popup's script is destroyed the instant the
+    // popup closes, so a user clicking away while the (often slow) scan was still running
+    // silently killed that second call before it was ever sent - the scan itself still
+    // finished and notified normally, which made it look like reconciliation had simply
+    // stopped working. Chain it here instead, inside the one message handler that is
+    // guaranteed to run to completion regardless of what any caller's UI does afterwards.
+    (async () => {
+      try {
+        const result = await scanAll("manual");
+        const reconciled = result?.mode === "attendance-discovery" ? await reconcileAndStore(result) : result;
+        sendResponse({ ok: true, result: reconciled });
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message });
+      }
+    })();
     return true;
   }
   if (message.type === "SETTINGS_CHANGED") {

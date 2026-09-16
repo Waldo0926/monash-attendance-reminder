@@ -466,7 +466,7 @@ async function reconcile(latestScan) {
   return result;
 }
 
-async function reconcileAndStore(latestScan) {
+export async function reconcileAndStore(latestScan) {
   if (running) {
     for (let attempt = 0; attempt < 80; attempt += 1) {
       await pause(250);

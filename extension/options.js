@@ -244,7 +244,12 @@ coursesRoot.addEventListener("click", (event) => {
 document.querySelector("#save").addEventListener("click", collectAndSave);
 document.querySelector("#scan").addEventListener("click", async () => {
   if (!(await collectAndSave())) return;
-  status.textContent = "正在检查 Gmail / Ed / Moodle 与 Attendance…";
+  // SCAN_ALL now chains the preliminary scan and the final reconciliation inside one
+  // background message handler instead of requiring this page to send a follow-up
+  // RUN_FINAL_RECONCILIATION message. Two round trips meant this page's own JS had to stay
+  // alive long enough to send the second one - closing this tab (or, for the equivalent
+  // popup.js flow, closing the popup) mid-scan silently dropped reconciliation entirely.
+  status.textContent = "正在检查 Gmail / Ed / Moodle 与 Attendance，并做最终核对…";
   let scan;
   try {
     scan = await sendMessageWithTimeout({ type: "SCAN_ALL" });
@@ -256,17 +261,11 @@ document.querySelector("#scan").addEventListener("click", async () => {
     status.textContent = `检查失败：${scan?.error || "未知错误"}`;
     return;
   }
-  status.textContent = "正在做最终核对：补回已签到课程并核对历史签到码…";
-  let final;
-  try {
-    final = await sendMessageWithTimeout({ type: "RUN_FINAL_RECONCILIATION" });
-  } catch (error) {
-    status.textContent = `最终核对超时：${error.message}`;
-    return;
-  }
-  status.textContent = final?.ok
-    ? `检查完成：识别 ${final.total ?? 0} 节，已签到 ${final.completed ?? 0} 节，找到代码 ${final.found ?? 0} 个。`
-    : `最终核对失败：${final?.error || "未知错误"}`;
+  const result = scan.result || {};
+  const items = result.items || [];
+  status.textContent = result.reconciliation?.status === "failed"
+    ? `最终核对未完成：${result.reconciliation.error || "未知错误"}`
+    : `检查完成：识别 ${items.length} 节，已签到 ${items.filter((item) => item.completed).length} 节，找到代码 ${items.filter((item) => item.code).length} 个。`;
 });
 document.querySelector("#import").addEventListener("click", () => document.querySelector("#importFile").click());
 document.querySelector("#importFile").addEventListener("change", async (event) => {

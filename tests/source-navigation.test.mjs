@@ -42,12 +42,17 @@ test("background wrapper uses the normal scanner plus explicit reconciliation v3
   assert.doesNotMatch(wrapper, /reconciliation-v2\.js/);
 });
 
-test("manual review explicitly awaits final reconciliation before rendering", async () => {
+test("manual review renders only after SCAN_ALL (which now includes final reconciliation) resolves", async () => {
+  // SCAN_ALL used to be followed by a separate RUN_FINAL_RECONCILIATION message this page had
+  // to send itself. That is now chained inside the background's SCAN_ALL handler (see
+  // service-worker.js) precisely because a caller's own script surviving long enough to send
+  // that second message could not be relied on - popup.js's equivalent flow lost it entirely
+  // whenever the popup closed mid-scan.
   const review = await text("review.js");
   const scan = review.indexOf('type: "SCAN_ALL"');
-  const reconcile = review.indexOf('type: "RUN_FINAL_RECONCILIATION"');
-  const finalRender = review.indexOf("await render();", reconcile);
-  assert.ok(scan >= 0 && reconcile > scan && finalRender > reconcile);
+  const finalRender = review.indexOf("await render();", scan);
+  assert.ok(scan >= 0 && finalRender > scan);
+  assert.doesNotMatch(review, /type:\s*"RUN_FINAL_RECONCILIATION"/);
   assert.match(review, /reconciliation\?\.version !== 4/);
 });
 

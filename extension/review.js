@@ -125,11 +125,20 @@ function updateSubmit() {
 attended.addEventListener("change", updateSubmit);
 results.addEventListener("change", updateSubmit);
 document.querySelector("#rescan").addEventListener("click", async () => {
-  results.innerHTML = `<section class="card empty"><h2>正在查找…</h2><p>先扫描 Gmail / Ed / Moodle，再直接读取 Attendance 完成状态和 Moodle 表格。完成最终核对后才会显示结果。</p></section>`;
+  results.innerHTML = `<section class="card empty"><h2>正在查找…</h2><p>扫描 Gmail / Ed / Moodle，再直接读取 Attendance 完成状态和 Moodle 表格，全部完成后才会显示结果。</p></section>`;
   let scan;
   try {
+    // Scanning and final reconciliation used to be two separate messages this page had to
+    // send back to back. That meant this page's own JS had to survive long enough to send
+    // the second one - fine while this tab stays open, but the equivalent flow in popup.js
+    // was destroyed the moment the popup closed, silently dropping reconciliation entirely.
+    // The background now chains both steps inside one SCAN_ALL call, so this page (and the
+    // popup) only need to make one request and only need to survive until it resolves.
+    await logDebug("review.js sending SCAN_ALL");
     scan = await sendMessageWithTimeout({ type: "SCAN_ALL" });
+    await logDebug("review.js got SCAN_ALL response", { ok: scan?.ok, reconciliation: scan?.result?.reconciliation });
   } catch (error) {
+    await logDebug("review.js SCAN_ALL threw/timed out", { message: error?.message });
     results.innerHTML = `<section class="card empty"><h2>扫描超时</h2><p>${escapeHtml(error.message)}</p></section>`;
     return;
   }
@@ -137,34 +146,16 @@ document.querySelector("#rescan").addEventListener("click", async () => {
     results.innerHTML = `<section class="card empty"><h2>扫描失败</h2><p>${escapeHtml(scan?.error || "未知错误")}</p></section>`;
     return;
   }
-  results.innerHTML = `<section class="card empty"><h2>正在做最终核对…</h2><p>正在核对已签到课程，并按日期 / 班号 / 时间补充历史签到码。</p></section>`;
-  let final;
-  try {
-    await logDebug("review.js sending RUN_FINAL_RECONCILIATION");
-    final = await sendMessageWithTimeout({ type: "RUN_FINAL_RECONCILIATION" });
-    await logDebug("review.js got RUN_FINAL_RECONCILIATION response", final);
-  } catch (error) {
-    await logDebug("review.js RUN_FINAL_RECONCILIATION threw/timed out", { message: error?.message });
-    // The background reconciliation may still be running even though the client gave up
-    // waiting on it; re-rendering here would silently overwrite this message with the
-    // not-yet-reconciled data and make the timeout invisible. Leave it on screen instead -
-    // the user can re-open this page (or click 重新查找 again) once it has had time to finish.
-    results.innerHTML = `<section class="card empty"><h2>最终核对超时</h2><p>${escapeHtml(error.message)}。后台可能仍在继续核对，请稍等片刻后重新打开本页面，或再次点击"重新查找"。</p></section>`;
-    return;
-  }
-  if (!final?.ok) {
-    // Surface exactly why the final reconciliation didn't complete instead of quietly
-    // falling back to the pre-reconciliation list - that fallback previously looked like
-    // completed/upcoming classes had "disappeared" with no indication anything went wrong.
-    await render();
+  await render();
+  // Surface exactly why the final reconciliation didn't complete instead of quietly
+  // falling back to the pre-reconciliation list - that fallback previously looked like
+  // completed/upcoming classes had "disappeared" with no indication anything went wrong.
+  if (scan.result?.reconciliation?.status === "failed") {
     const banner = document.createElement("section");
     banner.className = "card empty";
-    banner.innerHTML = `<h2>最终核对未完成</h2><p>${escapeHtml(final?.error || "未知原因，Attendance 完成状态和历史签到码未合并。")}</p>`;
+    banner.innerHTML = `<h2>最终核对未完成</h2><p>${escapeHtml(scan.result.reconciliation.error || "未知原因，Attendance 完成状态和历史签到码未合并。")}</p>`;
     results.prepend(banner);
-    updateSubmit();
-    return;
   }
-  await render();
   updateSubmit();
 });
 submit.addEventListener("click", async () => {

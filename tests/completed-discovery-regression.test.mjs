@@ -38,10 +38,21 @@ test("review and popup never submit completed rows", () => {
   assert.match(popup, /\.filter\(portalCompleted\)/);
 });
 
-test("settings test flow does not stop after the preliminary SCAN_ALL result", () => {
-  const options = read("../extension/options.js");
-  const scanIndex = options.indexOf('type: "SCAN_ALL"');
-  const reconciliationIndex = options.indexOf('type: "RUN_FINAL_RECONCILIATION"');
-  assert.ok(scanIndex >= 0, "settings page must run the preliminary scan");
-  assert.ok(reconciliationIndex > scanIndex, "settings page must run final reconciliation after the preliminary scan");
+test("SCAN_ALL chains final reconciliation in the background instead of relying on a caller's follow-up message", () => {
+  // A UI (popup.js in particular) sending SCAN_ALL and then a separate RUN_FINAL_RECONCILIATION
+  // message once it resolves depends on that UI's own script surviving both round trips. A
+  // popup's script is destroyed the instant the popup closes, so a user clicking away while
+  // the scan was still running silently dropped the second message before it was ever sent -
+  // the scan itself still finished and notified normally, making a real bug look like nothing
+  // was wrong. The background must do both steps inside the one SCAN_ALL handler so no caller
+  // needs to stay alive for a second message.
+  const serviceWorker = read("../extension/service-worker.js");
+  assert.match(serviceWorker, /import\s*\{\s*reconcileAndStore\s*\}\s*from\s*"\.\/reconciliation-v3\.js"/);
+  const scanAllHandler = serviceWorker.slice(serviceWorker.indexOf('message.type === "SCAN_ALL"'));
+  assert.match(scanAllHandler.slice(0, 1500), /await reconcileAndStore\(result\)/);
+
+  for (const file of ["../extension/popup.js", "../extension/review.js", "../extension/options.js"]) {
+    const source = read(file);
+    assert.doesNotMatch(source, /type:\s*"RUN_FINAL_RECONCILIATION"/, `${file} must not depend on a second message for reconciliation`);
+  }
 });

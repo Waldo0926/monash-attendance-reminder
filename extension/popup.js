@@ -47,9 +47,17 @@ async function refresh() {
 
 scanButton.addEventListener("click", async () => {
   scanButton.disabled = true;
-  scanButton.textContent = "正在查找…";
+  scanButton.textContent = "正在查找并核对…";
   let response;
   try {
+    // This used to be two separate messages - scan, then a follow-up "run final
+    // reconciliation" - sent back to back from this same click handler. The popup's script
+    // is destroyed the instant the popup closes (clicking away, opening another tab, the
+    // OS switching focus), which silently dropped that second message before it was ever
+    // sent: the scan itself still finished and notified normally in the background, so it
+    // looked like reconciliation had simply stopped merging completed classes back in. The
+    // background now does both steps inside one SCAN_ALL call, so a closed popup can no
+    // longer strand the second half of the work.
     response = await sendMessageWithTimeout({ type: "SCAN_ALL" });
   } catch (error) {
     scanButton.disabled = false;
@@ -57,28 +65,10 @@ scanButton.addEventListener("click", async () => {
     detail.textContent = error.message;
     return;
   }
-  if (!response?.ok) {
-    scanButton.disabled = false;
-    scanButton.textContent = "重试";
-    await refresh();
-    return;
-  }
-  scanButton.textContent = "正在核对…";
-  let final;
-  try {
-    final = await sendMessageWithTimeout({ type: "RUN_FINAL_RECONCILIATION" });
-  } catch (error) {
-    // Do not call refresh() here: it would overwrite this message with the not-yet-
-    // reconciled summary and hide the fact that the background work may still be running.
-    scanButton.disabled = false;
-    scanButton.textContent = "核对超时，重试";
-    detail.textContent = error.message;
-    return;
-  }
   scanButton.disabled = false;
-  scanButton.textContent = final?.ok ? "检查完成" : "核对失败，重试";
-  // refresh() now reads the persisted failure reason straight from storage (see reconciliation-v3.js),
-  // so it survives the popup being closed and reopened - no need to append final.error here too.
+  scanButton.textContent = response?.ok ? "检查完成" : "重试";
+  // refresh() reads the persisted status/failure reason straight from storage, so it
+  // survives the popup being closed and reopened.
   await refresh();
 });
 document.querySelector("#review").addEventListener("click", () => chrome.runtime.sendMessage({ type: "OPEN_REVIEW" }));
