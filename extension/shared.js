@@ -504,3 +504,31 @@ export function sendMessageWithTimeout(message, ms = 300000) {
     new Promise((_, reject) => setTimeout(() => reject(new Error("扩展没有响应，请重试（可能是后台进程被浏览器回收）")), ms))
   ]);
 }
+
+const DEBUG_LOG_KEY = "debugLog";
+const DEBUG_LOG_LIMIT = 200;
+
+// The service worker gets torn down and respawned by Chrome between messages, which silently
+// disconnects any DevTools "inspect service worker" window that was already open - it just
+// stops receiving new console output with no indication anything is wrong. Storage survives
+// every respawn, so persisting the log there (and rendering it on the confirm page) is the
+// only way to see what actually happened without racing the inspector's connection.
+export async function logDebug(message, data) {
+  console.log(`[MAH] ${message}`, data);
+  try {
+    const { [DEBUG_LOG_KEY]: existing = [] } = await chrome.storage.local.get(DEBUG_LOG_KEY);
+    const next = [...existing, { at: new Date().toISOString(), message, data }].slice(-DEBUG_LOG_LIMIT);
+    await chrome.storage.local.set({ [DEBUG_LOG_KEY]: next });
+  } catch {
+    // Logging must never be why a real operation fails.
+  }
+}
+
+export async function readDebugLog() {
+  const { [DEBUG_LOG_KEY]: log = [] } = await chrome.storage.local.get(DEBUG_LOG_KEY);
+  return log;
+}
+
+export async function clearDebugLog() {
+  await chrome.storage.local.set({ [DEBUG_LOG_KEY]: [] });
+}

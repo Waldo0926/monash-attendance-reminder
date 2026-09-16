@@ -1,4 +1,4 @@
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, matchCodesToAttendance, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek } from "./shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek } from "./shared.js";
 import { gmailSearchBounds, pickGmailBase, prioritiseGmailThreads } from "./gmail-source.js";
 
 const PRIMARY_ALARM = "attendance-primary";
@@ -482,7 +482,7 @@ async function scanAll(reason = "manual") {
       excerpt: (text || "").slice(0, 20000)
     }));
     const result = { reason, mode: "attendance-discovery", week: null, scannedAt: new Date().toISOString(), items, scans, discoveryErrors: discovered.errors };
-    console.log("[MAH] scanAll storing latestScan", { reason: result.reason, mode: result.mode, itemCount: result.items.length });
+    await logDebug("scanAll storing latestScan", { reason: result.reason, mode: result.mode, itemCount: result.items.length });
     await chrome.storage.local.set({ latestScan: result });
     const found = items.filter((item) => item.code).length;
     await chrome.notifications.create("attendance-scan", {

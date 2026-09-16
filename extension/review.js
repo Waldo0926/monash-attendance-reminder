@@ -1,4 +1,4 @@
-import { sendMessageWithTimeout, weekBucket, weekPrefix } from "./shared.js";
+import { clearDebugLog, logDebug, readDebugLog, sendMessageWithTimeout, weekBucket, weekPrefix } from "./shared.js";
 
 const results = document.querySelector("#results");
 const attended = document.querySelector("#attended");
@@ -111,6 +111,11 @@ async function render() {
       ? ` · ${scan.textLength ?? 0} 字 · ${scan.linkCount ?? 0} 链接${scan.courses?.length ? ` · 课程 ${scan.courses.map((course) => escapeHtml(String(course).toUpperCase())).join("/")}` : ""}${scan.structuredRowCount ? ` · ${scan.structuredRowCount} 条结构化签到记录` : ""}${scan.completedRowCount ? ` · ${scan.completedRowCount} 条已签到` : ""}${scan.imageCount ? ` · ${scan.imageCount} 张候选图 / ${scan.ocrSelectedCount ?? 0} 张送入OCR（${scan.ocrLength ?? 0} 字）` : ""}${scan.ocrError ? ` · OCR失败：${escapeHtml(scan.ocrError)}` : ""}${scan.threadCount ? ` · ${scan.threadCount} 封邮件` : ""} · ${scan.codeLikeCount ?? 0} 个疑似代码${scan.excerpt ? ` <details><summary>查看抓到的文字</summary><pre class="excerpt">${escapeHtml(scan.excerpt)}</pre></details>` : ""}${scan.ocrDetails?.length ? ` <details><summary>查看逐图 OCR</summary>${scan.ocrDetails.map((detail) => `<pre class="excerpt">图片 ${detail.index}${detail.width || detail.height ? ` · ${detail.width || "?"}×${detail.height || "?"}` : ""}${detail.src ? ` · ${escapeHtml(detail.src)}` : ""}\n${escapeHtml(detail.text || detail.error || "（无文字）")}${detail.passes?.length ? `\n\n--- OCR passes ---\n${detail.passes.map((pass) => `[${escapeHtml(pass.label)}]\n${escapeHtml(pass.text || "（无文字）")}`).join("\n\n")}` : ""}</pre>`).join("")}</details>` : ""}`
       : ` · ${escapeHtml(scan.error || "失败")}`}</li>`)
   ].join("");
+
+  const debugLog = await readDebugLog();
+  document.querySelector("#debugLogText").textContent = debugLog.length
+    ? debugLog.map((entry) => `${entry.at}  ${entry.message}${entry.data !== undefined ? `  ${JSON.stringify(entry.data)}` : ""}`).join("\n")
+    : "（还没有日志）";
 }
 
 function updateSubmit() {
@@ -135,8 +140,11 @@ document.querySelector("#rescan").addEventListener("click", async () => {
   results.innerHTML = `<section class="card empty"><h2>正在做最终核对…</h2><p>正在核对已签到课程，并按日期 / 班号 / 时间补充历史签到码。</p></section>`;
   let final;
   try {
+    await logDebug("review.js sending RUN_FINAL_RECONCILIATION");
     final = await sendMessageWithTimeout({ type: "RUN_FINAL_RECONCILIATION" });
+    await logDebug("review.js got RUN_FINAL_RECONCILIATION response", final);
   } catch (error) {
+    await logDebug("review.js RUN_FINAL_RECONCILIATION threw/timed out", { message: error?.message });
     // The background reconciliation may still be running even though the client gave up
     // waiting on it; re-rendering here would silently overwrite this message with the
     // not-yet-reconciled data and make the timeout invisible. Leave it on screen instead -
@@ -173,6 +181,11 @@ submit.addEventListener("click", async () => {
   const response = await chrome.runtime.sendMessage({ type: "SUBMIT_CODES", items });
   const successes = response.outcomes?.filter((item) => item.ok).length || 0;
   document.querySelector("#submitStatus").textContent = `已处理 ${successes}/${items.length} 条。请在 Attendance 页面核对成功提示和最终出勤率。`;
+});
+
+document.querySelector("#clearDebugLog").addEventListener("click", async () => {
+  await clearDebugLog();
+  await render();
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {

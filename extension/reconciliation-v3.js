@@ -1,4 +1,5 @@
 import { buildCodeEvidenceCache, codeConfidenceOf, matchStructuredAttendanceRows, mergePortalAttendance, needsCodeEvidence, projectUpcomingSessions, restoreCodeEvidence } from "./reconciliation-core.js";
+import { logDebug } from "./shared.js";
 
 const RECONCILIATION_VERSION = 4;
 const EVIDENCE_CACHE_KEY = "attendanceEvidenceCacheV4";
@@ -233,7 +234,7 @@ async function readAttendancePortal(lookbackDays) {
     const startedAt = Date.now();
     const page = await withTimeout(runOnPage(url, extractAttendanceRows, [date.key], 3), 55000, "该日期查询超时")
       .catch((error) => ({ ok: false, url, error: error.message }));
-    console.log(`[MAH] attendance date ${date.key}`, { ok: page.ok, error: page.error, sessionCount: page.value?.sessions?.length, ms: Date.now() - startedAt });
+    await logDebug(`attendance date ${date.key}`, { ok: page.ok, error: page.error, sessionCount: page.value?.sessions?.length, ms: Date.now() - startedAt });
     const rows = (page.value?.sessions || []).map((row) => ({
       ...row,
       day: date.day,
@@ -491,7 +492,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
       const { latestScan } = await chrome.storage.local.get("latestScan");
-      console.log("[MAH] RUN_FINAL_RECONCILIATION received", {
+      await logDebug("RUN_FINAL_RECONCILIATION received", {
         hasLatestScan: Boolean(latestScan),
         mode: latestScan?.mode,
         reason: latestScan?.reason,
@@ -518,11 +519,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: false, error });
         return;
       }
-      console.log("[MAH] reconciliation starting");
+      await logDebug("reconciliation starting");
       const reconciled = latestScan.reconciliation?.version === RECONCILIATION_VERSION
         ? latestScan
         : await reconcileAndStore(latestScan);
-      console.log("[MAH] reconciliation finished", reconciled.reconciliation);
+      await logDebug("reconciliation finished", reconciled.reconciliation);
       sendResponse({
         ok: true,
         total: reconciled.items?.length || 0,
@@ -531,7 +532,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         reconciliation: reconciled.reconciliation
       });
     } catch (error) {
-      console.error("[MAH] reconciliation threw", error);
+      await logDebug("reconciliation threw", { message: error?.message || String(error), stack: error?.stack });
       const { latestScan } = await chrome.storage.local.get("latestScan");
       await chrome.storage.local.set({
         latestScan: {
