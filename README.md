@@ -7,7 +7,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> Current extension build: **v1.3.23** — completed Attendance rows are retained through final reconciliation, synthetic completed-row links are distinguished from genuine pending `Entry.aspx` links, already-open Attendance tabs are repaired after an extension reload, and **Save, then test now** waits for final reconciliation before reporting results.
+> Current extension build: **v1.3.34** — scanning and final reconciliation now run as one background step instead of depending on the popup or a page staying open the whole time; status labels are qualified by "this week / last week", plus a "not started" state so an early-published code never looks submittable before the class happens; the lookback window extends forward through the end of the current week for portals that publish ahead; and key steps are logged to persistent storage and shown right on the confirm page, no DevTools required.
 
 A privacy-focused Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 
@@ -17,7 +17,7 @@ The default mode does **not** require a manually entered timetable. It reads rec
 
 ## Features
 
-- Discovers recent activities from **Monash Attendance** automatically.
+- Discovers recent activities from **Monash Attendance** automatically, looking back over the past week and forward through the end of the current week, to cover accounts whose portal publishes several days ahead.
 - Keeps activities that Attendance already marks as completed and shows them as completed instead of hiding them.
 - Keeps multiple completed activities on the same date separate by course, activity, class number, and time.
 - Searches for attendance codes in this order:
@@ -28,9 +28,13 @@ The default mode does **not** require a manually entered timetable. It reads rec
 - Uses bundled, local OCR for attendance tables posted as images.
 - Matches codes against available course, activity type, class number, date, and time information.
 - Marks uncertain matches for manual review instead of silently guessing.
+- Qualifies every status by "this week" or "last week" — no code found this week is usually just the teacher not having posted it yet; the same gap last week means Attendance still hasn't shown it as completed and is worth checking by hand.
+- Shows a class as "not started" once it has a scheduled start time still ahead of now, even if a code was already found early — it is shown as information, never as something ready to submit.
+- Runs scanning and final reconciliation as one background step, so it no longer depends on the popup or a page staying open for the whole duration.
+- Logs key steps to persistent storage and renders that log on the confirm page, so troubleshooting does not require opening DevTools.
 - Sends Chrome reminders at configurable times.
 - Requires an explicit attendance declaration before submission.
-- Never places a completed Attendance record on the submission path.
+- Never places a completed or not-yet-started Attendance record on the submission path.
 - Supports a manual timetable only as an optional fallback.
 
 Reminder times use the **current system timezone of the computer running Chrome**.
@@ -66,7 +70,7 @@ Review page
 Student confirmation for incomplete records only
 ```
 
-Completed rows discovered through the Attendance portal are assigned a stable per-session identity so several completed activities on the same date do not collapse into one result. A synthetic discovery link carrying `mah_completed=1` is treated only as completed-state evidence; a genuine `Entry.aspx` link remains a pending Attendance entry.
+Completed rows discovered through the Attendance portal are assigned a stable per-session identity so several completed activities on the same date do not collapse into one result. Final reconciliation reads a row's completed status directly from the live Attendance DOM rather than relying on anything injected into the page; a genuine `Entry.aspx` link remains a pending Attendance entry. Scanning and final reconciliation are chained inside a single background message rather than requiring the popup or the confirm page to stay open for both steps - a popup closing mid-scan used to silently skip reconciliation entirely.
 
 ### Moodle fallback
 
@@ -78,12 +82,13 @@ This is useful for units where attendance codes are published only inside Moodle
 
 The review page should show both incomplete and already-completed activities.
 
-A completed record is displayed as completed and cannot be submitted again. This makes it easier to distinguish between:
+A completed record is displayed as completed and cannot be submitted again. Every card is also labelled "this week" or "last week", making it easy to distinguish between:
 
-- already completed attendance;
-- a high-confidence code ready for review;
-- an uncertain code that needs checking;
-- no code found.
+- **completed** — Attendance already shows it done; cannot be resubmitted.
+- **not started** — the class hasn't reached its scheduled start time yet; a code found this early is shown for information only, and the checkbox stays disabled.
+- **high confidence** — a likely-correct code, ready for the student to review and submit.
+- **needs review** — a candidate code the student must confirm by hand.
+- **not found** — this week, that's usually just a normal wait for the teacher to publish it; last week, it means Attendance still hasn't shown it as completed and is worth checking manually.
 
 ## Install in Chrome
 
@@ -96,7 +101,7 @@ A completed record is displayed as completed and cannot be submitted again. This
 7. Open the extension settings.
 8. Keep automatic Attendance discovery enabled and configure reminder times.
 9. Keep Gmail, Moodle, Ed, and Monash Attendance signed in to the same Chrome profile.
-10. Click **Save, then test now**. In v1.3.23 the test performs the preliminary scan and final Attendance reconciliation before reporting final counts.
+10. Click **Save, then test now**. This runs the preliminary scan and final Attendance reconciliation as one background step and reports final counts once both are done - you don't need to keep the settings page open the whole time.
 
 After updating the repository locally, return to `chrome://extensions` and reload the unpacked extension. The displayed version should match `extension/manifest.json`.
 
@@ -154,7 +159,8 @@ An attendance code is not proof that a student attended a class. For that reason
 - Expired login sessions still require the student to sign in again.
 - OCR can make mistakes, so image-derived results should be checked when marked for review.
 - Some units may publish attendance information differently from the currently supported patterns.
-- Some Monash pages can visibly render usable content while Chrome still reports a tab as `loading`; the final reconciliation reads the usable DOM directly, but a genuinely unavailable page can still fail.
+- Some Monash pages can visibly render usable content while Chrome still reports a tab as `loading`; the final reconciliation reads the usable DOM directly, but a genuinely unavailable page can still fail - and gets recorded in the debug log when it does.
+- The lookback window only extends through the end of the current week; it never reads ahead into the next teaching week.
 - The project cannot guarantee compatibility with every unit or every future Monash page layout.
 
 ## Development and testing
@@ -174,7 +180,7 @@ npm test
 npm run lint
 ```
 
-Regression coverage includes Gmail multi-account discovery, strict per-class matching, OCR packaging, Moodle fallback, completed-row retention, same-day multiple completed sessions, completed-vs-pending `Entry.aspx` handling, final-reconciliation flow, and no-resubmit safeguards.
+Regression coverage includes Gmail multi-account discovery, strict per-class matching, OCR packaging, Moodle fallback, completed-row retention, same-day multiple completed sessions, completed-vs-pending `Entry.aspx` handling, final-reconciliation flow, no-resubmit safeguards, `executeScript` timeout bounds, this-week/last-week status labelling, the not-started placeholder and its submission block, and the forward-extended lookback window.
 
 Pull requests also run automated checks through GitHub Actions.
 
