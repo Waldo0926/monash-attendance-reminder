@@ -2,14 +2,14 @@
 
 [![Type](https://img.shields.io/badge/Type-Chrome_Extension-2563eb?style=for-the-badge)](#)
 [![Tech](https://img.shields.io/badge/Tech-JavaScript-7c3aed?style=for-the-badge)](#)
+[![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-16a34a?style=for-the-badge)](#platform-support)
 [![License](https://img.shields.io/badge/License-All_Rights_Reserved-dc2626?style=for-the-badge)](#)
-
 
 **English** | [简体中文](README.zh-CN.md)
 
 > Current extension build: **v1.3.34** — scanning and final reconciliation now run as one background step instead of depending on the popup or a page staying open the whole time; status labels are qualified by "this week / last week", plus a "not started" state so an early-published code never looks submittable before the class happens; the lookback window extends forward through the end of the current week for portals that publish ahead; and key steps are logged to persistent storage and shown right on the confirm page, no DevTools required.
 
-A privacy-focused Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
+A privacy-focused, cross-platform Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 
 The default mode does **not** require a manually entered timetable. It reads recent activities from the Monash Attendance account already signed in to the same Chrome profile, keeps completed activities visible, and searches the student's signed-in Monash learning services for matching attendance codes.
 
@@ -38,6 +38,12 @@ The default mode does **not** require a manually entered timetable. It reads rec
 - Supports a manual timetable only as an optional fallback.
 
 Reminder times use the **current system timezone of the computer running Chrome**.
+
+## Platform support
+
+This project is a Chrome extension plus a browser-based configurator, not a native macOS application. The same unpacked-extension workflow is intended to work on **Windows, macOS, and Linux** wherever a compatible desktop Chrome/Chromium environment provides the required extension APIs.
+
+There are no macOS-only runtime dependencies in the extension itself. Platform-specific development comments or tests in the repository do not make the user-facing extension macOS-only.
 
 ## How automatic discovery works
 
@@ -90,7 +96,7 @@ A completed record is displayed as completed and cannot be submitted again. Ever
 - **needs review** — a candidate code the student must confirm by hand.
 - **not found** — this week, that's usually just a normal wait for the teacher to publish it; last week, it means Attendance still hasn't shown it as completed and is worth checking manually.
 
-## Install in Chrome
+## Install in Chrome (Windows / macOS / Linux)
 
 1. Download or clone this repository.
 2. Open `chrome://extensions`.
