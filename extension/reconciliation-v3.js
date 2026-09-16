@@ -230,8 +230,10 @@ async function readAttendancePortal(lookbackDays) {
   // Malaysia portal to leave some tabs permanently in a loading state.
   for (const date of recentDates(lookbackDays)) {
     const url = `https://attendance.monash.edu.my/student/Units.aspx#${date.key}`;
+    const startedAt = Date.now();
     const page = await withTimeout(runOnPage(url, extractAttendanceRows, [date.key], 3), 55000, "该日期查询超时")
       .catch((error) => ({ ok: false, url, error: error.message }));
+    console.log(`[MAH] attendance date ${date.key}`, { ok: page.ok, error: page.error, sessionCount: page.value?.sessions?.length, ms: Date.now() - startedAt });
     const rows = (page.value?.sessions || []).map((row) => ({
       ...row,
       day: date.day,
@@ -489,6 +491,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     try {
       const { latestScan } = await chrome.storage.local.get("latestScan");
+      console.log("[MAH] RUN_FINAL_RECONCILIATION received", {
+        hasLatestScan: Boolean(latestScan),
+        mode: latestScan?.mode,
+        reason: latestScan?.reason,
+        itemCount: latestScan?.items?.length,
+        existingReconciliationVersion: latestScan?.reconciliation?.version
+      });
       if (!latestScan || latestScan.mode !== "attendance-discovery") {
         // This used to bail without touching storage at all, so the reason was only ever
         // visible in the one UI that happened to be open for this exact call - reopening the
@@ -509,9 +518,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: false, error });
         return;
       }
+      console.log("[MAH] reconciliation starting");
       const reconciled = latestScan.reconciliation?.version === RECONCILIATION_VERSION
         ? latestScan
         : await reconcileAndStore(latestScan);
+      console.log("[MAH] reconciliation finished", reconciled.reconciliation);
       sendResponse({
         ok: true,
         total: reconciled.items?.length || 0,
@@ -520,6 +531,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         reconciliation: reconciled.reconciliation
       });
     } catch (error) {
+      console.error("[MAH] reconciliation threw", error);
       const { latestScan } = await chrome.storage.local.get("latestScan");
       await chrome.storage.local.set({
         latestScan: {
