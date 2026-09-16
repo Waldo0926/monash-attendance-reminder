@@ -69,6 +69,9 @@ scanButton.addEventListener("click", async () => {
   scanButton.disabled = false;
   scanButton.textContent = final?.ok ? "检查完成" : "核对失败，重试";
   await refresh();
+  // refresh() overwrites detail with a generic summary; append the actual reason so a
+  // reconciliation failure isn't silently indistinguishable from one that never ran.
+  if (!final?.ok && final?.error) detail.textContent += ` · ${final.error}`;
 });
 document.querySelector("#review").addEventListener("click", () => chrome.runtime.sendMessage({ type: "OPEN_REVIEW" }));
 document.querySelector("#settings").addEventListener("click", () => chrome.runtime.openOptionsPage());

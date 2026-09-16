@@ -145,7 +145,14 @@ document.querySelector("#rescan").addEventListener("click", async () => {
     return;
   }
   if (!final?.ok) {
+    // Surface exactly why the final reconciliation didn't complete instead of quietly
+    // falling back to the pre-reconciliation list - that fallback previously looked like
+    // completed/upcoming classes had "disappeared" with no indication anything went wrong.
     await render();
+    const banner = document.createElement("section");
+    banner.className = "card empty";
+    banner.innerHTML = `<h2>最终核对未完成</h2><p>${escapeHtml(final?.error || "未知原因，Attendance 完成状态和历史签到码未合并。")}</p>`;
+    results.prepend(banner);
     updateSubmit();
     return;
   }
