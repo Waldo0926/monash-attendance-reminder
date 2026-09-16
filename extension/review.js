@@ -12,15 +12,38 @@ function portalCompleted(item) {
     || /[?&]mah_completed=1(?:&|#|$)/.test(String(item?.entryUrl || ""));
 }
 
+// Staff sometimes publish next week's code days ahead of the actual class - useful to know,
+// but Attendance itself will not accept it until the session has actually happened, and
+// clicking it into "high confidence, ready to submit" before then is actively misleading.
+// A class whose scheduled start time is still ahead of now must show as not-yet-started
+// regardless of whether a code was already found for it.
+function sessionStart(item) {
+  const iso = item?.attendanceDate?.iso;
+  if (!iso) return null;
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const match = /(\d{1,2}):(\d{2})\s*([ap])/i.exec(String(item?.time || ""));
+  if (!match) return null;
+  let hour = Number(match[1]) % 12;
+  if (match[3].toLowerCase() === "p") hour += 12;
+  return new Date(year, month - 1, day, hour, Number(match[2]), 0);
+}
+
+function isUpcomingSession(item, now = new Date()) {
+  if (item?.upcoming) return true;
+  const start = sessionStart(item);
+  return Boolean(start) && start.getTime() > now.getTime();
+}
+
 function itemStatus(item) {
   const prefix = weekPrefix(weekBucket(item));
   if (portalCompleted(item)) return { key: "completed", label: `${prefix}已签到` };
+  // A recurring class that hasn't started yet has nothing meaningful to submit, even if a
+  // code was already found or the day itself has nothing on Attendance to scan yet - keep
+  // that visually and textually distinct from an already-started class with a real gap.
+  if (isUpcomingSession(item)) return { key: "upcoming", label: `${prefix}未开始` };
   if (item.confidence === "high") return { key: "high", label: `${prefix}高可信` };
   if (item.confidence === "review") return { key: "review", label: `${prefix}请核对` };
-  // A recurring class whose day this week hasn't arrived yet has nothing to scan - it isn't
-  // missing, it just doesn't exist on Attendance yet. Keep that visually and textually
-  // distinct from a day that already passed with nothing found for it.
-  if (item.upcoming) return { key: "upcoming", label: `${prefix}未开始` };
   return { key: "missing", label: `${prefix}未找到` };
 }
 
@@ -73,30 +96,42 @@ async function render() {
   results.innerHTML = items.map((item) => {
     const status = itemStatus(item);
     const completed = status.key === "completed";
+    const upcoming = status.key === "upcoming";
     const bucket = weekBucket(item);
     const codeLevel = codeConfidence(item);
-    const autoChecked = !completed && item.code && codeLevel === "high";
-    const checkboxDisabled = completed || !item.code;
+    // A code found ahead of the class happening is real information worth keeping visible,
+    // but Attendance will not accept it until the session is over, so it must never look
+    // "ready to submit" - never auto-check it and never let the checkbox be enabled.
+    const autoChecked = !completed && !upcoming && item.code && codeLevel === "high";
+    const checkboxDisabled = completed || upcoming || !item.code;
     const context = completed
       ? (item.context || "Monash Attendance 已显示完成，无需再次提交。")
-      : item.context;
+      : upcoming
+        ? (item.code
+          ? `已提前找到签到码，但这节课还没开始 —— Attendance 通常要等课程结束、签到入口开放后才能提交，请到时候再回来确认并提交。${item.context ? `（${item.context}）` : ""}`
+          : "")
+        : item.context;
     const codeText = completed
       ? (item.code ? escapeHtml(item.code) : "✓ 已完成")
       : escapeHtml(item.code || "—");
-    const codeTitle = completed && item.code ? "已签到；同时保留已找到的签到码" : "";
+    const codeTitle = completed && item.code
+      ? "已签到；同时保留已找到的签到码"
+      : upcoming && item.code
+        ? "已提前找到签到码，但还不能提交"
+        : "";
     // A non-this-week class that is still "未找到" is not the normal wait-for-the-teacher
     // case - it usually means Attendance itself hasn't shown it as completed, or the scan
     // couldn't reach it. Make that distinction explicit instead of using the same generic
     // hint for both situations.
-    const missingHint = item.upcoming
-      ? "这节课本周还没到上课时间，Attendance 通常要到上课当天才会显示签到入口，请等到那天之后再查。"
+    const missingHint = upcoming
+      ? "这节课还没到上课时间，Attendance 通常要到课程结束、签到入口开放后才能提交，请到时候再查。"
       : bucket === "thisWeek"
         ? "来源页面没有匹配到这个班次，老师可能还没发布签到码，请稍后再查。"
         : "来源页面没有匹配到这个班次，且 Attendance 也没显示已完成 —— 请手动打开来源确认是否真的漏签。";
     return `
     <article class="card ${completed ? "completed-card" : ""}">
       <div class="row"><label><input class="pick" data-id="${escapeHtml(item.id)}" type="checkbox" ${autoChecked ? "checked" : ""} ${checkboxDisabled ? "disabled" : ""}> ${escapeHtml(item.course)} · ${escapeHtml(item.session)}</label><span class="status ${status.key}">${status.label}</span></div>
-      <div class="row"><p>${escapeHtml(item.day)} ${escapeHtml(item.time)}</p><span class="code ${completed && !item.code ? "completed-code" : ""}" title="${escapeHtml(codeTitle)}">${codeText}</span></div>
+      <div class="row"><p>${escapeHtml(item.day)} ${escapeHtml(item.time)}</p><span class="code ${(completed && !item.code) || upcoming ? "completed-code" : ""}" title="${escapeHtml(codeTitle)}">${codeText}</span></div>
       ${context ? `<div class="context">${escapeHtml(context)}</div>` : `<p class="muted">${missingHint}</p>`}
       ${sourceLinks(item, completed)}
     </article>`;
