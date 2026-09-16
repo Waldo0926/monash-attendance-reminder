@@ -1,4 +1,4 @@
-import { buildCodeEvidenceCache, codeConfidenceOf, matchStructuredAttendanceRows, mergePortalAttendance, needsCodeEvidence, restoreCodeEvidence } from "./reconciliation-core.js";
+import { buildCodeEvidenceCache, codeConfidenceOf, matchStructuredAttendanceRows, mergePortalAttendance, needsCodeEvidence, projectUpcomingSessions, restoreCodeEvidence } from "./reconciliation-core.js";
 
 const RECONCILIATION_VERSION = 4;
 const EVIDENCE_CACHE_KEY = "attendanceEvidenceCacheV4";
@@ -445,6 +445,11 @@ async function reconcile(latestScan) {
   }
   const courses = [...courseScores.keys()].sort((a, b) => (courseScores.get(b) || 0) - (courseScores.get(a) || 0));
   for (const course of courses) await resolveMoodleCourse(result, course);
+
+  // Add placeholders for this week's classes that recur weekly but simply haven't happened
+  // yet. Do this last, after code/Moodle resolution, so these not-yet-existing rows are never
+  // fed into a code search of their own.
+  result.items = projectUpcomingSessions(result.items);
 
   const afterCodes = result.items.filter((item) => item.code && codeConfidenceOf(item) === "high").length;
   const afterCompleted = result.items.filter((item) => item.completed).length;

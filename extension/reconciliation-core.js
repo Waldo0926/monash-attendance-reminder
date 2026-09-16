@@ -222,6 +222,72 @@ export function buildCodeEvidenceCache(items, previous = {}) {
   return next;
 }
 
+const WEEKDAY_INDEX = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+
+function startOfWeekLocal(date) {
+  const value = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  value.setDate(value.getDate() - ((value.getDay() + 6) % 7));
+  return value;
+}
+
+function isoFor(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function attendanceDateKeyFor(date) {
+  return `${date.getDate()}_${MONTHS[date.getMonth()]}_${String(date.getFullYear()).slice(-2)}`;
+}
+
+// Attendance only ever shows a class once its day has arrived, so a recurring weekly class
+// whose day this week hasn't happened yet has no row anywhere to scan - it isn't missing, it
+// simply doesn't exist yet. Without this, that looked identical to a class whose day already
+// passed with nothing found for it (a genuine gap worth investigating). Project each known
+// recurring (course, session, weekday, time) pattern - inferred from whatever week already
+// carries it - forward onto this week, and add a placeholder only when that projected date is
+// still ahead of today and this week doesn't already have a row for it.
+export function projectUpcomingSessions(items, now = new Date()) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  const monday = startOfWeekLocal(today);
+  const patterns = new Map();
+  const seenThisWeek = new Set();
+
+  for (const item of items || []) {
+    const weekdayIndex = WEEKDAY_INDEX[item?.day];
+    const time = normaliseClock(item?.time);
+    const course = String(item?.course || "").toUpperCase();
+    if (weekdayIndex === undefined || !time || !course) continue;
+    const key = `${course}|${String(item.session || "").toLowerCase()}|${weekdayIndex}|${time}`;
+    if (!patterns.has(key)) patterns.set(key, item);
+    const iso = item?.attendanceDate?.iso;
+    if (!iso) continue;
+    const itemDate = new Date(`${iso}T12:00:00`);
+    if (!Number.isNaN(itemDate.getTime()) && itemDate >= monday) seenThisWeek.add(key);
+  }
+
+  const additions = [];
+  for (const [key, sample] of patterns) {
+    if (seenThisWeek.has(key)) continue;
+    const projected = new Date(monday);
+    projected.setDate(projected.getDate() + ((WEEKDAY_INDEX[sample.day] + 6) % 7));
+    if (projected <= today) continue; // Already due/passed: a real gap, not a not-yet-scanned future class.
+    additions.push({
+      ...sample,
+      id: `${sample.courseId || sample.course}:${sample.sessionId || sample.session || "session"}:upcoming-${isoFor(projected)}`,
+      code: "",
+      codeConfidence: "missing",
+      confidence: "missing",
+      completed: false,
+      upcoming: true,
+      context: "",
+      entryUrl: "",
+      sourceUrl: "",
+      attendanceSourceUrl: "",
+      attendanceDate: { iso: isoFor(projected), key: attendanceDateKeyFor(projected) }
+    });
+  }
+  return [...(items || []), ...additions];
+}
+
 export function mergePortalAttendance(items, sessions, attendanceSourceUrl = "https://attendance.monash.edu.my/student/Units.aspx") {
   const byKey = new Map((items || []).map((item) => [attendanceIdentity(item), { ...item }]));
   for (const session of sessions || []) {

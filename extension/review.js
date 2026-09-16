@@ -17,6 +17,10 @@ function itemStatus(item) {
   if (portalCompleted(item)) return { key: "completed", label: `${prefix}已签到` };
   if (item.confidence === "high") return { key: "high", label: `${prefix}高可信` };
   if (item.confidence === "review") return { key: "review", label: `${prefix}请核对` };
+  // A recurring class whose day this week hasn't arrived yet has nothing to scan - it isn't
+  // missing, it just doesn't exist on Attendance yet. Keep that visually and textually
+  // distinct from a day that already passed with nothing found for it.
+  if (item.upcoming) return { key: "upcoming", label: `${prefix}未开始` };
   return { key: "missing", label: `${prefix}未找到` };
 }
 
@@ -84,9 +88,11 @@ async function render() {
     // case - it usually means Attendance itself hasn't shown it as completed, or the scan
     // couldn't reach it. Make that distinction explicit instead of using the same generic
     // hint for both situations.
-    const missingHint = bucket === "thisWeek"
-      ? "来源页面没有匹配到这个班次，老师可能还没发布签到码，请稍后再查。"
-      : "来源页面没有匹配到这个班次，且 Attendance 也没显示已完成 —— 请手动打开来源确认是否真的漏签。";
+    const missingHint = item.upcoming
+      ? "这节课本周还没到上课时间，Attendance 通常要到上课当天才会显示签到入口，请等到那天之后再查。"
+      : bucket === "thisWeek"
+        ? "来源页面没有匹配到这个班次，老师可能还没发布签到码，请稍后再查。"
+        : "来源页面没有匹配到这个班次，且 Attendance 也没显示已完成 —— 请手动打开来源确认是否真的漏签。";
     return `
     <article class="card ${completed ? "completed-card" : ""}">
       <div class="row"><label><input class="pick" data-id="${escapeHtml(item.id)}" type="checkbox" ${autoChecked ? "checked" : ""} ${checkboxDisabled ? "disabled" : ""}> ${escapeHtml(item.course)} · ${escapeHtml(item.session)}</label><span class="status ${status.key}">${status.label}</span></div>
