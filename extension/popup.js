@@ -28,12 +28,21 @@ async function refresh() {
   const pastWeeks = items.filter((item) => weekBucket(item) !== "thisWeek");
   const thisWeekFound = thisWeek.filter((item) => item.code && codeConfidence(item) === "high").length;
   const pastCompleted = pastWeeks.filter(portalCompleted).length;
-  const finalised = latestScan.reconciliation?.status === "complete";
+  const reconciliationStatus = latestScan.reconciliation?.status;
   // Keep this week's "still looking for the code" separate from last week's "already
   // attended" - both used to collapse into one "已签到 X 节" number, which made a perfectly
   // normal this-week wait look identical to an actual past-week gap.
   summary.textContent = `本周找到代码 ${thisWeekFound}/${thisWeek.length}${pastWeeks.length ? ` · 上周已签到 ${pastCompleted}/${pastWeeks.length}` : ""}`;
-  detail.textContent = `上次检查：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")}${finalised ? " · 最终核对完成" : " · 等待最终核对"}`;
+  // The popup closes and forgets everything the moment you click away, so a failure reason
+  // shown only during the live scan click was gone forever the next time you reopened it.
+  // Read it back from storage instead of collapsing "failed" into the same "等待最终核对"
+  // text as "hasn't run yet".
+  const reconciliationText = reconciliationStatus === "complete"
+    ? "最终核对完成"
+    : reconciliationStatus === "failed"
+      ? `最终核对失败：${latestScan.reconciliation.error || "未知错误"}`
+      : "等待最终核对";
+  detail.textContent = `上次检查：${new Date(latestScan.scannedAt).toLocaleString("zh-CN")} · ${reconciliationText}`;
 }
 
 scanButton.addEventListener("click", async () => {
@@ -68,10 +77,9 @@ scanButton.addEventListener("click", async () => {
   }
   scanButton.disabled = false;
   scanButton.textContent = final?.ok ? "检查完成" : "核对失败，重试";
+  // refresh() now reads the persisted failure reason straight from storage (see reconciliation-v3.js),
+  // so it survives the popup being closed and reopened - no need to append final.error here too.
   await refresh();
-  // refresh() overwrites detail with a generic summary; append the actual reason so a
-  // reconciliation failure isn't silently indistinguishable from one that never ran.
-  if (!final?.ok && final?.error) detail.textContent += ` · ${final.error}`;
 });
 document.querySelector("#review").addEventListener("click", () => chrome.runtime.sendMessage({ type: "OPEN_REVIEW" }));
 document.querySelector("#settings").addEventListener("click", () => chrome.runtime.openOptionsPage());

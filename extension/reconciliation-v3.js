@@ -490,7 +490,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     try {
       const { latestScan } = await chrome.storage.local.get("latestScan");
       if (!latestScan || latestScan.mode !== "attendance-discovery") {
-        sendResponse({ ok: false, error: "没有可核对的 Attendance 扫描结果" });
+        // This used to bail without touching storage at all, so the reason was only ever
+        // visible in the one UI that happened to be open for this exact call - reopening the
+        // popup or the review page afterwards showed a plain "等待最终核对" with no way to
+        // tell a real failure from one that simply hadn't run yet. Persist it like every other
+        // failure path does.
+        const error = !latestScan
+          ? "没有可核对的 Attendance 扫描结果：请先点击「重新查找」完成一次扫描。"
+          : `没有可核对的 Attendance 扫描结果：本次扫描模式是 "${latestScan.mode || "未设置"}"，不是自动发现模式（请确认设置里"自动识别课程"已打开）。`;
+        if (latestScan) {
+          await chrome.storage.local.set({
+            latestScan: {
+              ...latestScan,
+              reconciliation: { version: RECONCILIATION_VERSION, status: "failed", error, completedAt: new Date().toISOString() }
+            }
+          }).catch(() => {});
+        }
+        sendResponse({ ok: false, error });
         return;
       }
       const reconciled = latestScan.reconciliation?.version === RECONCILIATION_VERSION
