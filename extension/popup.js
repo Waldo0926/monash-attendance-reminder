@@ -1,3 +1,5 @@
+import { sendMessageWithTimeout } from "./shared.js";
+
 const summary = document.querySelector("#summary");
 const detail = document.querySelector("#detail");
 const scanButton = document.querySelector("#scan");
@@ -32,7 +34,15 @@ async function refresh() {
 scanButton.addEventListener("click", async () => {
   scanButton.disabled = true;
   scanButton.textContent = "正在查找…";
-  const response = await chrome.runtime.sendMessage({ type: "SCAN_ALL" });
+  let response;
+  try {
+    response = await sendMessageWithTimeout({ type: "SCAN_ALL" });
+  } catch (error) {
+    scanButton.disabled = false;
+    scanButton.textContent = "超时，重试";
+    detail.textContent = error.message;
+    return;
+  }
   if (!response?.ok) {
     scanButton.disabled = false;
     scanButton.textContent = "重试";
@@ -40,7 +50,16 @@ scanButton.addEventListener("click", async () => {
     return;
   }
   scanButton.textContent = "正在核对…";
-  const final = await chrome.runtime.sendMessage({ type: "RUN_FINAL_RECONCILIATION" });
+  let final;
+  try {
+    final = await sendMessageWithTimeout({ type: "RUN_FINAL_RECONCILIATION" });
+  } catch (error) {
+    scanButton.disabled = false;
+    scanButton.textContent = "核对超时，重试";
+    detail.textContent = error.message;
+    await refresh();
+    return;
+  }
   scanButton.disabled = false;
   scanButton.textContent = final?.ok ? "检查完成" : "核对失败，重试";
   await refresh();

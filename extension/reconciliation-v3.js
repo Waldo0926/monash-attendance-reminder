@@ -8,6 +8,22 @@ function pause(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// chrome.scripting.executeScript() targets a live page: if that page's own JS is stuck
+// (a blocked event loop, a synchronous request that never returns, a frozen jQuery Mobile
+// transition on the Attendance portal) the call itself never resolves or rejects. Every
+// caller below awaits this inside a bounded loop, so one unresponsive tab must not be able
+// to stall reconciliation forever - race it against a timeout and treat that as a failure
+// the existing retry logic already knows how to handle.
+function withTimeout(promise, ms, message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message || `操作超时 (${ms}ms)`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); }
+    );
+  });
+}
+
 function recentDates(count = 7) {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const now = new Date();
@@ -33,10 +49,14 @@ async function waitForUsableDocument(tabId, targetUrl, timeoutMs = 12000) {
     try { currentOrigin = new URL(tab.url || "about:blank").origin; } catch {}
     if (currentOrigin === expectedOrigin) {
       try {
-        const probe = await chrome.scripting.executeScript({
-          target: { tabId },
-          func: () => ({ readyState: document.readyState, hasBody: Boolean(document.body), href: location.href })
-        });
+        const probe = await withTimeout(
+          chrome.scripting.executeScript({
+            target: { tabId },
+            func: () => ({ readyState: document.readyState, hasBody: Boolean(document.body), href: location.href })
+          }),
+          4000,
+          "页面探测超时"
+        );
         const state = probe?.[0]?.result;
         if (state?.hasBody && state.readyState !== "loading") {
           await pause(350);
@@ -66,7 +86,11 @@ async function runOnPage(url, func, args = [], attempts = 3) {
     for (let attempt = 0; attempt < Math.max(1, attempts); attempt += 1) {
       if (attempt) await pause(650 + attempt * 250);
       try {
-        const response = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args });
+        const response = await withTimeout(
+          chrome.scripting.executeScript({ target: { tabId: tab.id }, func, args }),
+          9000,
+          "页面读取超时"
+        );
         value = response?.[0]?.result ?? null;
         if (value && (value.ready !== false || attempt === attempts - 1)) {
           const current = await chrome.tabs.get(tab.id).catch(() => null);
@@ -206,7 +230,8 @@ async function readAttendancePortal(lookbackDays) {
   // Malaysia portal to leave some tabs permanently in a loading state.
   for (const date of recentDates(lookbackDays)) {
     const url = `https://attendance.monash.edu.my/student/Units.aspx#${date.key}`;
-    const page = await runOnPage(url, extractAttendanceRows, [date.key], 3);
+    const page = await withTimeout(runOnPage(url, extractAttendanceRows, [date.key], 3), 20000, "该日期查询超时")
+      .catch((error) => ({ ok: false, url, error: error.message }));
     const rows = (page.value?.sessions || []).map((row) => ({
       ...row,
       day: date.day,
@@ -329,7 +354,7 @@ function courseCandidateUrls(result, course) {
 
 async function discoverCourseRoot(course) {
   for (const indexUrl of ["https://learning.monash.edu/my/courses.php", "https://learning.monash.edu/my/"]) {
-    const page = await runOnPage(indexUrl, function findCourse(targetCourse) {
+    const page = await withTimeout(runOnPage(indexUrl, function findCourse(targetCourse) {
       const compact = (value) => String(value || "").replace(/\s+/g, " ").trim();
       const wanted = String(targetCourse || "").toUpperCase();
       const matches = [];
@@ -343,7 +368,7 @@ async function discoverCourseRoot(course) {
         if (text.toUpperCase().includes(wanted)) matches.push(anchor.href.replace(/([?&]id=\d+).*$/, "$1"));
       }
       return { ready: Boolean(document.body), matches: [...new Set(matches)] };
-    }, [course], 3);
+    }, [course], 3), 20000, "该页面查询超时").catch((error) => ({ ok: false, url: indexUrl, error: error.message }));
     if (page.value?.matches?.length) return page.value.matches[0];
   }
   return "";
@@ -366,7 +391,8 @@ async function resolveMoodleCourse(result, course) {
     if (!url || visited.has(url)) continue;
     visited.add(url);
     pagesRead += 1;
-    const page = await runOnPage(url, extractMoodleEvidence, [], 4);
+    const page = await withTimeout(runOnPage(url, extractMoodleEvidence, [], 4), 20000, "该页面查询超时")
+      .catch((error) => ({ ok: false, url, error: error.message }));
     const evidence = page.value || { rows: [], attendanceLinks: [], sectionLinks: [] };
     result.scans.push({
       ok: page.ok,

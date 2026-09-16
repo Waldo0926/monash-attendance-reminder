@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, loadSettings, validSchedule } from "./shared.js";
+import { DEFAULT_SETTINGS, loadSettings, sendMessageWithTimeout, validSchedule } from "./shared.js";
 
 let settings;
 const coursesRoot = document.querySelector("#courses");
@@ -245,13 +245,25 @@ document.querySelector("#save").addEventListener("click", collectAndSave);
 document.querySelector("#scan").addEventListener("click", async () => {
   if (!(await collectAndSave())) return;
   status.textContent = "正在检查 Gmail / Ed / Moodle 与 Attendance…";
-  const scan = await chrome.runtime.sendMessage({ type: "SCAN_ALL" });
+  let scan;
+  try {
+    scan = await sendMessageWithTimeout({ type: "SCAN_ALL" });
+  } catch (error) {
+    status.textContent = `检查超时：${error.message}`;
+    return;
+  }
   if (!scan?.ok) {
     status.textContent = `检查失败：${scan?.error || "未知错误"}`;
     return;
   }
   status.textContent = "正在做最终核对：补回已签到课程并核对历史签到码…";
-  const final = await chrome.runtime.sendMessage({ type: "RUN_FINAL_RECONCILIATION" });
+  let final;
+  try {
+    final = await sendMessageWithTimeout({ type: "RUN_FINAL_RECONCILIATION" });
+  } catch (error) {
+    status.textContent = `最终核对超时：${error.message}`;
+    return;
+  }
   status.textContent = final?.ok
     ? `检查完成：识别 ${final.total ?? 0} 节，已签到 ${final.completed ?? 0} 节，找到代码 ${final.found ?? 0} 个。`
     : `最终核对失败：${final?.error || "未知错误"}`;

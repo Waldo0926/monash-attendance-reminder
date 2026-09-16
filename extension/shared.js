@@ -465,3 +465,15 @@ export async function loadSettings() {
   const { settings } = await chrome.storage.local.get("settings");
   return settings || structuredClone(DEFAULT_SETTINGS);
 }
+
+// The full scan/reconciliation round trip can legitimately take a couple of minutes, but it
+// must never hang the popup/review/options page forever: the background work is already
+// timeout-bounded internally, so anything past a generous ceiling here means the service
+// worker was killed or stopped responding, not that the scan is still progressing. Surface
+// that as a normal failure instead of leaving the UI stuck on "正在..." indefinitely.
+export function sendMessageWithTimeout(message, ms = 150000) {
+  return Promise.race([
+    chrome.runtime.sendMessage(message),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("扩展没有响应，请重试（可能是后台进程被浏览器回收）")), ms))
+  ]);
+}

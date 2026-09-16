@@ -1,3 +1,5 @@
+import { sendMessageWithTimeout } from "./shared.js";
+
 const results = document.querySelector("#results");
 const attended = document.querySelector("#attended");
 const submit = document.querySelector("#submit");
@@ -104,13 +106,27 @@ attended.addEventListener("change", updateSubmit);
 results.addEventListener("change", updateSubmit);
 document.querySelector("#rescan").addEventListener("click", async () => {
   results.innerHTML = `<section class="card empty"><h2>正在查找…</h2><p>先扫描 Gmail / Ed / Moodle，再直接读取 Attendance 完成状态和 Moodle 表格。完成最终核对后才会显示结果。</p></section>`;
-  const scan = await chrome.runtime.sendMessage({ type: "SCAN_ALL" });
+  let scan;
+  try {
+    scan = await sendMessageWithTimeout({ type: "SCAN_ALL" });
+  } catch (error) {
+    results.innerHTML = `<section class="card empty"><h2>扫描超时</h2><p>${escapeHtml(error.message)}</p></section>`;
+    return;
+  }
   if (!scan?.ok) {
     results.innerHTML = `<section class="card empty"><h2>扫描失败</h2><p>${escapeHtml(scan?.error || "未知错误")}</p></section>`;
     return;
   }
   results.innerHTML = `<section class="card empty"><h2>正在做最终核对…</h2><p>正在核对已签到课程，并按日期 / 班号 / 时间补充历史签到码。</p></section>`;
-  const final = await chrome.runtime.sendMessage({ type: "RUN_FINAL_RECONCILIATION" });
+  let final;
+  try {
+    final = await sendMessageWithTimeout({ type: "RUN_FINAL_RECONCILIATION" });
+  } catch (error) {
+    results.innerHTML = `<section class="card empty"><h2>最终核对超时</h2><p>${escapeHtml(error.message)}，正在显示未核对的初步结果。</p></section>`;
+    await render();
+    updateSubmit();
+    return;
+  }
   if (!final?.ok) {
     await render();
     updateSubmit();
