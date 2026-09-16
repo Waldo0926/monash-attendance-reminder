@@ -1,5 +1,5 @@
 import { buildCodeEvidenceCache, codeConfidenceOf, matchStructuredAttendanceRows, mergePortalAttendance, needsCodeEvidence, projectUpcomingSessions, restoreCodeEvidence } from "./reconciliation-core.js";
-import { logDebug } from "./shared.js";
+import { logDebug, mondayOf } from "./shared.js";
 
 const RECONCILIATION_VERSION = 4;
 const EVIDENCE_CACHE_KEY = "attendanceEvidenceCacheV4";
@@ -25,17 +25,33 @@ function withTimeout(promise, ms, message) {
   });
 }
 
+function dateEntry(value, months) {
+  return {
+    iso: `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`,
+    key: `${value.getDate()}_${months[value.getMonth()]}_${String(value.getFullYear()).slice(-2)}`,
+    day: value.toLocaleDateString("en-US", { weekday: "long" })
+  };
+}
+
 function recentDates(count = 7) {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const now = new Date();
   const result = [];
   for (let offset = Math.max(1, Number(count) || 7); offset >= 0; offset -= 1) {
-    const value = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset, 12);
-    result.push({
-      iso: `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`,
-      key: `${value.getDate()}_${months[value.getMonth()]}_${String(value.getFullYear()).slice(-2)}`,
-      day: value.toLocaleDateString("en-US", { weekday: "long" })
-    });
+    result.push(dateEntry(new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset, 12), months));
+  }
+  // Attendance can list a day's scheduled sessions before that day happens (a pending row,
+  // not a signed-in tick), not just once the day has arrived - see the matching comment on
+  // shared.js's recentAttendanceDates. Extend through Sunday of the current week so those
+  // rows get read too, instead of only ever looking backward from today.
+  const sunday = mondayOf(now);
+  sunday.setDate(sunday.getDate() + 6);
+  for (
+    let cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    cursor <= sunday;
+    cursor.setDate(cursor.getDate() + 1)
+  ) {
+    result.push(dateEntry(new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 12), months));
   }
   return result;
 }
@@ -234,7 +250,15 @@ async function readAttendancePortal(lookbackDays) {
     const startedAt = Date.now();
     const page = await withTimeout(runOnPage(url, extractAttendanceRows, [date.key], 3), 55000, "该日期查询超时")
       .catch((error) => ({ ok: false, url, error: error.message }));
-    await logDebug(`attendance date ${date.key}`, { ok: page.ok, error: page.error, sessionCount: page.value?.sessions?.length, ms: Date.now() - startedAt });
+    await logDebug(`attendance date ${date.key}`, {
+      ok: page.ok,
+      error: page.error,
+      ms: Date.now() - startedAt,
+      // course/session/completed for every row this page actually extracted - the only way
+      // to tell "the page has no such row" apart from "the row was there but not recognised
+      // as completed" without re-reading the live DOM by hand.
+      rows: (page.value?.sessions || []).map((row) => ({ course: row.course, session: row.session, time: row.time, completed: row.completed, hadEntryUrl: Boolean(row.entryUrl) }))
+    });
     const rows = (page.value?.sessions || []).map((row) => ({
       ...row,
       day: date.day,

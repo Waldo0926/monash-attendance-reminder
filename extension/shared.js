@@ -29,19 +29,34 @@ export function parseDateKey(key) {
   return dateInfo(new Date(2000 + Number(yy), month, Number(day), 12));
 }
 
-export function recentAttendanceDates(now = new Date(), count = 7) {
-  const dates = [];
-  for (let offset = Math.max(1, count); offset >= 0; offset -= 1) {
-    dates.push(dateInfo(new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset, 12)));
-  }
-  return dates;
-}
-
 export function mondayOf(date = new Date()) {
   const local = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const offset = (local.getDay() + 6) % 7;
   local.setDate(local.getDate() - offset);
   return local;
+}
+
+export function recentAttendanceDates(now = new Date(), count = 7) {
+  const dates = [];
+  for (let offset = Math.max(1, count); offset >= 0; offset -= 1) {
+    dates.push(dateInfo(new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset, 12)));
+  }
+  // Attendance can list a day's scheduled sessions before that day happens - a pending
+  // "?" row rather than a signed-in tick - not just once the day has arrived. Scanning only
+  // backward from today missed every later-this-week class entirely (Wednesday couldn't see
+  // Thursday's row even though the portal already had it), which looked like those classes
+  // had vanished. Extend through Sunday of the current week; anything past that belongs to a
+  // future teaching week this window has no business claiming yet.
+  const sunday = mondayOf(now);
+  sunday.setDate(sunday.getDate() + 6);
+  for (
+    let cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    cursor <= sunday;
+    cursor.setDate(cursor.getDate() + 1)
+  ) {
+    dates.push(dateInfo(new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 12)));
+  }
+  return dates;
 }
 
 export function teachingWeek(settings, now = new Date()) {
