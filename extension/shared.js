@@ -305,6 +305,29 @@ export function matchCodesToAttendance(text, attendanceItems) {
   const clean = String(text || "").replace(/\u00a0/g, " ").replace(/[\t ]+/g, " ");
   const lines = clean.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const codeRe = /\b(?=[A-Z0-9]{5}\b)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5}\b/g;
+  const standaloneMonthRe = new RegExp(`^(?:${MONTH_NAMES_RE})[a-z]*\\.?$`, "i");
+  const weekdayDayRe = /\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b,?\s+\d{1,2}\b/i;
+
+  // Ed occasionally renders a table cell such as "Wednesday, 16 Sep" as two DOM lines:
+  //   Tutorial Wednesday, 16 09 2:00PM UBMP4
+  //   Sep
+  // Keep the exact-date safety rule, but reconstruct this narrowly-defined layout before
+  // matching. Only an immediately adjacent, month-only line is accepted, so unrelated
+  // context cannot donate a month and turn an ambiguous candidate into a confident code.
+  function repairDetachedMonth(row, lineIndex) {
+    if (!row || ANY_DATE_RE.test(row) || !SESSION_TYPE_RE.test(row) || !normaliseTimeToken(row)) return row;
+    const dateStem = weekdayDayRe.exec(row);
+    if (!dateStem) return row;
+
+    const neighbours = [lines[lineIndex + 1], lines[lineIndex - 1]];
+    const monthLine = neighbours.find((value) => value && standaloneMonthRe.test(value));
+    if (!monthLine) return row;
+    const month = monthLine.match(new RegExp(`(?:${MONTH_NAMES_RE})[a-z]*`, "i"))?.[0];
+    if (!month) return row;
+
+    const insertAt = dateStem.index + dateStem[0].length;
+    return `${row.slice(0, insertAt)} ${month}${row.slice(insertAt)}`;
+  }
 
   function rowBlock(lineIndex, codeIndex = -1) {
     const current = lines[lineIndex] || "";
@@ -321,7 +344,7 @@ export function matchCodesToAttendance(text, attendanceItems) {
       if (Number.isInteger(start)) {
         const end = starts.find((index) => index > codeIndex) ?? current.length;
         const local = current.slice(start, end).trim();
-        if (local) return local;
+        if (local) return repairDetachedMonth(local, lineIndex);
       }
     }
 
@@ -340,7 +363,7 @@ export function matchCodesToAttendance(text, attendanceItems) {
       if ((lines[index].match(codeRe) || []).length) break;
       end = index;
     }
-    return lines.slice(start, end + 1).join(" ");
+    return repairDetachedMonth(lines.slice(start, end + 1).join(" "), lineIndex);
   }
 
   const hits = [];
