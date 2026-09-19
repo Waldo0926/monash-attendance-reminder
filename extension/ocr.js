@@ -213,29 +213,38 @@ async function recognise(image) {
   } else {
     const fullBlock = await runPass(normalized.blob, PSM.SINGLE_BLOCK, "full-block");
     let workingText = fullBlock;
-    let rows = sessionRows(workingText);
-    let codes = codeSequence(workingText);
 
-    // Most Ed/Moodle tables are completely readable in one block pass.  Only escalate
-    // when the metadata rows outnumber the codes (or no code was read at all).
-    let needsRescue = !codes.length || (rows.length && codes.length < rows.length);
-    if (needsRescue && normalized.height >= 260) {
+    // A single block pass can drop an entire row - metadata line and code together, not
+    // just the code cell - when that row's spacing or shading confuses Tesseract's own
+    // layout analysis. Confirmed against the real FIT2102/FIT2109 Ed attendance posts: one
+    // Workshop row's whole line vanished from the block pass while every other row read
+    // fine, and comparing "codes found" against "rows found" stayed balanced (both dropped
+    // together) so the old rescue gate below never even fired. Running SPARSE_TEXT
+    // unconditionally, rather than only once the block pass already looks short a code,
+    // reads each text region independently and is what actually has a chance of catching a
+    // row the block pass silently lost.
+    if (normalized.height >= 260) {
       const sparse = await runPass(normalized.blob, PSM.SPARSE_TEXT, "full-sparse");
       workingText = [workingText, sparse].filter(Boolean).join("\n");
-      rows = sessionRows(workingText);
-      codes = codeSequence(workingText);
-      needsRescue = !codes.length || (rows.length && codes.length < rows.length);
     }
 
-    // If page OCR still omitted one or more right-column tokens, read only that column
-    // and align it with the metadata rows.  This is much cheaper than OCR'ing each row.
-    if (needsRescue && normalized.width / Math.max(1, normalized.height) >= 2.2) {
+    let codes = codeSequence(workingText);
+
+    // Same blind spot applies to the dedicated code-column crop below: a fully-dropped row
+    // never shows up as a codes/rows mismatch, so gating this rescue on that mismatch missed
+    // exactly the rows that most needed it. This crop only ever reads the whitelisted right
+    // column, so running it whenever the image is shaped like a real code table (wide
+    // relative to its height) costs one more OCR pass but is what recovers that row's code.
+    if (normalized.width / Math.max(1, normalized.height) >= 2.2) {
       const codeNormal = await runPass(normalized.codeBlob, PSM.SPARSE_TEXT, "code-zone", { whitelist: CODE_WHITELIST, collect: false });
       const codeBinary = await runPass(normalized.codeThresholdBlob, PSM.SPARSE_TEXT, "code-zone-threshold", { whitelist: CODE_WHITELIST, collect: false });
       const imageCodes = bestCodeSequence(codeNormal, codeBinary);
-      syntheticRows.push(...pairRowsWithCodeColumn(workingText, imageCodes));
-      if (imageCodes.length === 1 && !codes.length) syntheticRows.push(`${workingText} ${imageCodes[0]}`.trim());
-      codes = [...codes, ...imageCodes];
+      const hasNewCode = imageCodes.some((code) => !codes.includes(code));
+      if (hasNewCode) {
+        syntheticRows.push(...pairRowsWithCodeColumn(workingText, imageCodes));
+        if (imageCodes.length === 1 && !codes.length) syntheticRows.push(`${workingText} ${imageCodes[0]}`.trim());
+      }
+      codes = [...new Set([...codes, ...imageCodes])];
     }
 
     // Last-resort top-band OCR is retained only when the preceding passes found no code
