@@ -7,7 +7,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> Current extension build: **v1.3.34** — scanning and final reconciliation now run as one background step instead of depending on the popup or a page staying open the whole time; status labels are qualified by "this week / last week", plus a "not started" state so an early-published code never looks submittable before the class happens; the lookback window extends forward through the end of the current week for portals that publish ahead; and key steps are logged to persistent storage and shown right on the confirm page, no DevTools required.
+> Current extension build: **v1.3.37** — fixed the full-semester history export silently dropping most weeks' attendance codes: the Gmail thread cap was a flat number sized for a single week's scan, so a multi-week export ran out of budget partway through and left later weeks (or whole units) blank even though the emails were sitting right there in the search results. The cap now scales with how many sessions/courses are actually being searched for.
 
 A privacy-focused, cross-platform Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 

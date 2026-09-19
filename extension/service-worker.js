@@ -338,7 +338,28 @@ async function automaticSourceScans(items, settings) {
     // courses on accounts with many engineering attendance announcements. Rank exact code
     // messages first, reserve candidates across every detected course, then stop as soon as
     // every Attendance row is confidently resolved.
-    const threads = prioritiseGmailThreads(search.gmailThreads, codes, 24);
+    //
+    // A flat 4-per-course / 24-total cap is plenty for a normal weekly scan (one session per
+    // course, one Attendance Code email to find), but buildSemesterHistory() reuses this exact
+    // function over a whole semester's worth of sessions. With the cap left flat, the
+    // round-robin below spent its per-course budget on the first few weeks it saw and never
+    // got back to the rest, so a semester export quietly returned only the most recent couple
+    // of weeks' codes while every earlier week stayed "missing" - even though the emails were
+    // sitting right there in the search results. Scale both caps with how many sessions are
+    // actually being searched for instead of assuming there is only ever one.
+    const sessionsPerCourse = new Map();
+    items.forEach((item) => {
+      const key = String(item.course || "").toLowerCase();
+      if (!key) return;
+      sessionsPerCourse.set(key, (sessionsPerCourse.get(key) || 0) + 1);
+    });
+    const maxSessionsForOneCourse = Math.max(0, ...sessionsPerCourse.values());
+    // +2 spare candidates per course covers a unit resending a correction or splitting one
+    // week's announcement into two threads, same margin the old flat cap of 4 gave a 1-2
+    // session weekly scan.
+    const perCourseThreadLimit = Math.max(4, maxSessionsForOneCourse + 2);
+    const totalThreadLimit = Math.max(24, codes.length * perCourseThreadLimit);
+    const threads = prioritiseGmailThreads(search.gmailThreads, codes, totalThreadLimit, perCourseThreadLimit);
     for (const thread of threads) {
       const resolved = confidentlyResolvedCourses(scans, items);
       if (resolved.size >= codes.length) break;

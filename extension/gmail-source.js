@@ -54,7 +54,7 @@ function threadPriority(thread, courseCodes) {
   return { score, matchedCourses };
 }
 
-export function prioritiseGmailThreads(threads = [], courseCodes = [], limit = 24) {
+export function prioritiseGmailThreads(threads = [], courseCodes = [], limit = 24, perCourseLimit = 4) {
   const unique = [];
   const seen = new Set();
   for (const thread of threads || []) {
@@ -80,9 +80,9 @@ export function prioritiseGmailThreads(threads = [], courseCodes = [], limit = 2
   // small global limit still gives every detected course a chance.
   const perCourse = new Map((courseCodes || []).map((code) => [
     code,
-    unique.filter((thread) => thread._courses.includes(code)).slice(0, 4)
+    unique.filter((thread) => thread._courses.includes(code)).slice(0, perCourseLimit)
   ]));
-  for (let round = 0; round < 4 && selected.length < limit; round += 1) {
+  for (let round = 0; round < perCourseLimit && selected.length < limit; round += 1) {
     for (const code of courseCodes || []) {
       add(perCourse.get(code)?.[round]);
       if (selected.length >= limit) break;
