@@ -117,8 +117,27 @@ export function findCourseLinks(links, courseCodes, { hrefPattern, normaliseHref
   for (const link of links || []) {
     const raw = stripHash(link.href);
     if (!hrefPattern.test(raw)) continue;
-    const haystack = `${link.label} ${link.context || ""} ${raw}`.toLowerCase();
-    const courses = codes.filter((code) => haystack.includes(code));
+    // The clickable label is the anchor's own text (e.g. "FIT2102 1 Programming
+    // paradigms") and almost always names just the one course that link points to.
+    // The wider DOM "context" climbed a few parents up is there for pages where the
+    // course code sits beside the link rather than inside it - but confirmed against
+    // the real Ed dashboard and Moodle "My units" page, that climb regularly lands on
+    // a shared list/sidebar container whose text is every enrolled unit concatenated
+    // together. Matching against that blob tagged every single course link with every
+    // requested code instead of just its own. Try the label alone first, and only fall
+    // back to the full label+context+href haystack when the label itself names none of
+    // the requested courses.
+    const labelHaystack = `${link.label} ${raw}`.toLowerCase();
+    const labelCourses = codes.filter((code) => labelHaystack.includes(code));
+    // A label naming some other real course (e.g. "FIT3143 Parallel computing") is proof
+    // this link belongs to that other course, even when FIT3143 isn't one of the codes we
+    // want - falling back to the polluted wider context there would wrongly resurrect a
+    // match. Only fall back when the label names no course at all, i.e. the code genuinely
+    // isn't in the anchor's own text (an Ed thread titled "Week 3 Attendance Codes").
+    const labelNamesAnyCourse = /\b[a-z]{3}\d{4}\b/.test(labelHaystack);
+    const courses = labelCourses.length || labelNamesAnyCourse
+      ? labelCourses
+      : codes.filter((code) => `${link.label} ${link.context || ""} ${raw}`.toLowerCase().includes(code));
     if (!courses.length) continue;
     const href = normaliseHref(raw);
     if (!seen.has(href)) seen.set(href, courses);

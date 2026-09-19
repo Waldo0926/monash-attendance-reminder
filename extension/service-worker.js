@@ -509,7 +509,12 @@ async function automaticSourceScans(items, settings) {
   const unresolvedCodes = codes.filter((code) => !resolvedCourses.has(code.toLowerCase()));
   if (!unresolvedCodes.length) return scans;
 
-  const myUnits = await scan("https://learning.monash.edu/my/courses.php", { maxMs: 15000, waitFor: "a[href*='course/view.php?id=']" });
+  // "My units" is a slow-hydrating page: timed by hand against the real page with nothing
+  // else competing for the tab, its course cards did not exist in the DOM until ~17.4s
+  // after navigation - already past the old 15000ms budget on its own, before counting the
+  // extra throttling a background scan tab gets. That is why moodleCoursesFound kept coming
+  // back empty and the whole Moodle fallback silently never ran for any course.
+  const myUnits = await scan("https://learning.monash.edu/my/courses.php", { maxMs: 45000, waitFor: "a[href*='course/view.php?id=']" });
   const moodleCourses = findCourseLinks(myUnits?.links, unresolvedCodes, {
     hrefPattern: /\/course\/view\.php\?id=\d+/,
     normaliseHref: (href) => href.replace(/(\/course\/view\.php\?id=\d+).*$/, "$1")

@@ -45,6 +45,31 @@ async function preferGmailMostRecent() {
   }
 }
 
+// Ed's discussion list only renders its ~30 most recent threads by default and hides the
+// rest behind a "加载更多" ("Load more") button. Confirmed by hand against the real FIT2102
+// course: with nothing clicked, weeks 1-6's "Attendance Codes" threads simply do not exist
+// in the DOM at all - no amount of fixing which links get selected afterwards can find a
+// thread that was never scraped. Clicking that button repeatedly pages in the course's full
+// history (verified: 9 clicks took one real course from 24 to 278 discussion links and
+// surfaced every one of Week 1 through Week 8's attendance threads). Bounded well past what
+// a normal semester needs so this can't spin forever on a course with unusually deep history.
+async function expandEdDiscussionList() {
+  if (location.hostname !== "edstem.org" || !/\/courses\/\d+\/discussion(\/|$)/.test(location.pathname)) return false;
+  let clicked = false;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const button = [...document.querySelectorAll("button")].find((node) => /加载更多|load\s*more/i.test(node.innerText || node.textContent || ""));
+    if (!button) break;
+    try {
+      button.click();
+      clicked = true;
+      await sleep(700);
+    } catch {
+      break;
+    }
+  }
+  return clicked;
+}
+
 function moodleAttendanceLinkCandidates(links) {
   if (location.hostname !== "learning.monash.edu") return [];
   const seen = new Map();
@@ -193,6 +218,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await waitForStablePage({ maxMs: message.maxMs || 8000, waitFor: message.waitFor || "", minMs: message.minMs || 0 });
       if (await preferGmailMostRecent()) {
         await waitForStablePage({ maxMs: 5000, stableMs: 600, intervalMs: 200, minMs: 500 });
+      }
+      if (await expandEdDiscussionList()) {
+        await waitForStablePage({ maxMs: 5000, stableMs: 600, intervalMs: 200, minMs: 300 });
       }
       const links = [...document.querySelectorAll("a[href]")].map((link) => {
         const label = (link.innerText || link.textContent || "").replace(/\s+/g, " ").trim();
