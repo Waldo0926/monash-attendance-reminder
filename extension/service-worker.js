@@ -453,9 +453,20 @@ async function automaticSourceScans(items, settings) {
     hrefPattern: /\/courses\/\d+/,
     normaliseHref: (href) => href.replace(/(\/courses\/\d+).*$/, "$1/discussion")
   });
+  // Temporary diagnostic, same reasoning as the Gmail ones above: a semester export that
+  // still comes back with FIT2102/FIT3162 blank gives no way to tell, from the outside,
+  // whether the Ed dashboard scan itself failed (wrong tab, timed out, not signed in),
+  // whether findCourseLinks never matched a course to its Ed page, or whether it reached
+  // edThreadLinks and simply picked the wrong threads. Safe to remove once resolved.
+  await logDebug("ed dashboard scan", {
+    ok: edDashboard?.ok,
+    edCodes,
+    gmailResolvedCourses: [...gmailResolved],
+    openEdTabCount: openEdTabs.length,
+    edCoursesFound: edCourses.map((course) => ({ href: course.href, courses: course.courses }))
+  });
   for (const course of edCourses.slice(0, 8)) {
     const list = await scan(course.href, { waitFor: "a[href*='/discussion/']", courses: course.courses });
-    if (!list?.ok) continue;
     // A normal weekly scan's `items` only ever spans the current (and maybe last) week, so
     // this comes back with at most one or two weeks and edThreadLinks' old flat cap of 2
     // never mattered. buildSemesterHistory reuses this same function with `items` spanning
@@ -470,14 +481,24 @@ async function automaticSourceScans(items, settings) {
         .map((item) => item.attendanceDate?.iso && teachingWeek({ weekOneMonday: settings.weekOneMonday }, new Date(`${item.attendanceDate.iso}T12:00:00`)))
         .filter(Number.isFinite))]
       : [];
+    const selectedThreadUrls = list?.ok ? edThreadLinks(list.links, edTargetWeeks) : [];
+    await logDebug(`ed course discussion list ${course.href}`, {
+      ok: list?.ok,
+      courseItemCount: courseItems.length,
+      edTargetWeeks,
+      linkCount: (list?.links || []).length,
+      selectedThreadUrls
+    });
+    if (!list?.ok) continue;
     // The thread body renders after the list; give it a floor so we don't read a page
     // that has the sidebar painted but the post itself still loading. Keep the week number
     // from the selected attendance-thread title as a strong hint for Moodle later.
-    for (const threadUrl of edThreadLinks(list.links, edTargetWeeks)) {
+    for (const threadUrl of selectedThreadUrls) {
       const meta = list.links.find((link) => String(link.href || "").split("#")[0] === threadUrl);
       const week = Number(/\bweek\s*(\d{1,2})\b/i.exec(`${meta?.label || ""} ${meta?.context || ""}`)?.[1] || 0);
       if (week) weekHints.add(week);
-      await scan(threadUrl, { maxMs: 12000, minMs: 3000, courses: course.courses });
+      const thread = await scan(threadUrl, { maxMs: 12000, minMs: 3000, courses: course.courses });
+      await logDebug(`ed thread scan ${threadUrl}`, { ok: thread?.ok, courses: thread?.courses, textExcerpt: (thread?.text || "").slice(0, 2000) });
     }
   }
 
@@ -493,24 +514,41 @@ async function automaticSourceScans(items, settings) {
     hrefPattern: /\/course\/view\.php\?id=\d+/,
     normaliseHref: (href) => href.replace(/(\/course\/view\.php\?id=\d+).*$/, "$1")
   });
+  // Temporary diagnostic, same reasoning as the Ed/Gmail ones above.
+  await logDebug("moodle my-units scan", {
+    ok: myUnits?.ok,
+    unresolvedCodes,
+    moodleCoursesFound: moodleCourses.map((course) => ({ href: course.href, courses: course.courses }))
+  });
   for (const course of moodleCourses.slice(0, 8)) {
     const home = await scan(course.href, { waitFor: "a[href*='section']", courses: course.courses });
-    if (!home?.ok) continue;
-    const weekOneMonday = settings.weekOneMonday || detectWeekOneMonday(home.text);
+    const weekOneMonday = settings.weekOneMonday || detectWeekOneMonday(home?.text || "");
     const courseItems = items.filter((item) => course.courses.includes(String(item.course || "").toLowerCase()));
     const courseDates = courseItems.map((item) => item.attendanceDate).filter(Boolean);
     let targetWeeks = weekOneMonday
       ? [...new Set(courseDates.map((date) => teachingWeek({ weekOneMonday }, new Date(`${date.iso}T12:00:00`))).filter(Number.isFinite))]
-      : inferWeekNumbersFromText(home.text, courseDates);
+      : inferWeekNumbersFromText(home?.text || "", courseDates);
     if (!targetWeeks.length && weekHints.size) targetWeeks = [...weekHints];
 
-    const weekLinks = moodleWeekLinks(home.links);
+    const weekLinks = moodleWeekLinks(home?.links || []);
     const availableWeeks = [...weekLinks.keys()];
     // Exact weeks are safe when they came from Attendance dates, Moodle date ranges or an
     // Ed attendance-thread title. Only the no-hint path uses a bounded fallback.
     const exact = targetWeeks.length ? availableWeeks.filter((week) => targetWeeks.includes(week)) : [];
     const selectedWeeks = exact.length ? exact : pickWeekNumbers(availableWeeks, []);
-    for (const week of selectedWeeks) await scan(weekLinks.get(week), { courses: course.courses });
+    await logDebug(`moodle course home ${course.href}`, {
+      ok: home?.ok,
+      weekOneMonday,
+      courseItemCount: courseItems.length,
+      targetWeeks,
+      availableWeeks,
+      selectedWeeks
+    });
+    if (!home?.ok) continue;
+    for (const week of selectedWeeks) {
+      const section = await scan(weekLinks.get(week), { courses: course.courses });
+      await logDebug(`moodle section scan week ${week} ${weekLinks.get(week)}`, { ok: section?.ok, courses: section?.courses, textExcerpt: (section?.text || "").slice(0, 1500) });
+    }
   }
 
   return scans;
