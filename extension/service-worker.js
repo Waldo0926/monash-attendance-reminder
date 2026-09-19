@@ -619,6 +619,11 @@ const SEMESTER_EXPORT_MAX_WEEKS = 20;
 // the student has a record they can download, e.g. to send their unit coordinator when asking
 // for a manual correction.
 async function buildSemesterHistory(settings) {
+  // Log the raw setting before any validation can throw - a thrown error before this point
+  // used to leave the debug log completely empty, which made "did the button click even
+  // reach the background?" and "is Week 1's date actually what I think it is?" impossible to
+  // tell apart from the confirm page alone.
+  await logDebug("semester history: export requested", { weekOneMonday: settings?.weekOneMonday, today: new Date().toISOString().slice(0, 10) });
   if (!settings?.weekOneMonday) {
     throw new Error("请先在设置里填写 Week 1 的星期一日期，才能计算本学期的范围。");
   }
@@ -632,9 +637,24 @@ async function buildSemesterHistory(settings) {
     throw new Error(`时间跨度超过 ${SEMESTER_EXPORT_MAX_WEEKS} 周，暂不支持一次性导出，请检查 Week 1 日期是否填错了。`);
   }
 
-  await logDebug("semester history: reading Attendance portal", { lookbackDays });
+  await logDebug("semester history: reading Attendance portal", { weekOneMonday: settings.weekOneMonday, lookbackDays });
   const portal = await readAttendancePortal(lookbackDays);
   let items = mergePortalAttendance([], portal.sessions);
+
+  // The date range we asked for and the range Attendance actually handed back can silently
+  // diverge - a wrong Week 1 date only shrinks lookbackDays, but the portal itself could also
+  // just not have rendered anything for the older dates even though we did ask for them. Log
+  // both so the two failure modes are never confused with each other again.
+  const scannedDates = portal.scans.filter((scan) => scan.ok).map((scan) => scan.url.split("#")[1]).filter(Boolean);
+  const datesWithSessions = [...new Set(items.filter((item) => item.attendanceDate?.iso).map((item) => item.attendanceDate.iso))].sort();
+  await logDebug("semester history: portal scan coverage", {
+    requestedLookbackDays: lookbackDays,
+    datesRequested: scannedDates.length,
+    datesWithAnySessionRow: datesWithSessions.length,
+    earliestDateWithSessions: datesWithSessions[0] || null,
+    latestDateWithSessions: datesWithSessions[datesWithSessions.length - 1] || null,
+    failedDateCount: portal.scans.filter((scan) => !scan.ok).length
+  });
 
   // Codes already found by an earlier normal weekly scan are cached - restoring them first
   // means this only has to go searching Gmail/Ed/Moodle for whatever the cache doesn't
@@ -652,10 +672,19 @@ async function buildSemesterHistory(settings) {
   const cache = buildCodeEvidenceCache(items, stored[EVIDENCE_CACHE_KEY] || {});
   await chrome.storage.local.set({ [EVIDENCE_CACHE_KEY]: cache });
 
-  return items.sort((a, b) =>
+  const sorted = items.sort((a, b) =>
     String(a.attendanceDate?.iso || "").localeCompare(String(b.attendanceDate?.iso || ""))
     || String(a.course || "").localeCompare(String(b.course || ""))
   );
+  return {
+    items: sorted,
+    range: {
+      weekOneMonday: settings.weekOneMonday,
+      lookbackDays,
+      earliestDateWithSessions: datesWithSessions[0] || null,
+      latestDateWithSessions: datesWithSessions[datesWithSessions.length - 1] || null
+    }
+  };
 }
 
 async function submitOne(item, settings) {
@@ -759,10 +788,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "EXPORT_SEMESTER_HISTORY") {
     (async () => {
       try {
+        await logDebug("EXPORT_SEMESTER_HISTORY received");
         const settings = await loadSettings();
-        const items = await buildSemesterHistory(settings);
-        sendResponse({ ok: true, items });
+        const { items, range } = await buildSemesterHistory(settings);
+        sendResponse({ ok: true, items, range });
       } catch (error) {
+        await logDebug("EXPORT_SEMESTER_HISTORY failed", { message: error?.message });
         sendResponse({ ok: false, error: error.message });
       }
     })();

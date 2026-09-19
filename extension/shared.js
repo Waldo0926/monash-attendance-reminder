@@ -551,8 +551,20 @@ const DEBUG_LOG_LIMIT = 200;
 // stops receiving new console output with no indication anything is wrong. Storage survives
 // every respawn, so persisting the log there (and rendering it on the confirm page) is the
 // only way to see what actually happened without racing the inspector's connection.
-export async function logDebug(message, data) {
+//
+// A multi-minute semester export calls this dozens of times from one long-running async
+// function, but a weekly alarm can fire and start its own scan in the same window - two
+// concurrent callers each doing get-then-set on the same storage key is a lost-update race:
+// whichever write lands second overwrites the first caller's entries as if they never
+// happened, which can leave the log looking empty even though logging never actually failed.
+// Chaining every call onto one promise serialises the read-modify-write so no entry is lost.
+let logChain = Promise.resolve();
+export function logDebug(message, data) {
   console.log(`[MAH] ${message}`, data);
+  logChain = logChain.then(() => writeLogEntry(message, data));
+  return logChain;
+}
+async function writeLogEntry(message, data) {
   try {
     const { [DEBUG_LOG_KEY]: existing = [] } = await chrome.storage.local.get(DEBUG_LOG_KEY);
     const next = [...existing, { at: new Date().toISOString(), message, data }].slice(-DEBUG_LOG_LIMIT);

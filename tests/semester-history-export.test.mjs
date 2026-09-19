@@ -19,8 +19,8 @@ test("EXPORT_SEMESTER_HISTORY reuses the weekly-scan discovery pipeline over the
   const fn = serviceWorker.slice(serviceWorker.indexOf("async function buildSemesterHistory"));
   assert.match(fn.slice(0, 1500), /if \(!settings\?\.weekOneMonday\)/, "must require Week 1 to be configured before computing a range");
   assert.match(fn.slice(0, 1500), /await readAttendancePortal\(lookbackDays\)/, "must reuse the same DOM-based Attendance reader as the weekly scan");
-  assert.match(fn.slice(0, 1500), /restoreCodeEvidence\(items, stored\[EVIDENCE_CACHE_KEY\] \|\| \{\}\)/, "must restore already-known codes from the cache before searching sources again");
-  assert.match(fn.slice(0, 2000), /mergeSourceScanCodes\(items, sourceScans\)/, "must reuse the same matching logic as the weekly scan rather than a separate implementation");
+  assert.match(fn.slice(0, 3000), /restoreCodeEvidence\(items, stored\[EVIDENCE_CACHE_KEY\] \|\| \{\}\)/, "must restore already-known codes from the cache before searching sources again");
+  assert.match(fn.slice(0, 3500), /mergeSourceScanCodes\(items, sourceScans\)/, "must reuse the same matching logic as the weekly scan rather than a separate implementation");
 });
 
 test("the semester export shares mergeSourceScanCodes with the normal weekly scan instead of duplicating the matching loop", () => {

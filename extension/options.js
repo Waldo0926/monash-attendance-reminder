@@ -345,13 +345,21 @@ document.querySelector("#exportHistory").addEventListener("click", async () => {
     historyStatus.textContent = `导出失败：${response?.error || "未知错误"}`;
     return;
   }
+  // Show the actual range Attendance handed back right next to the range we asked for. A
+  // wrong Week 1 date and the portal quietly not rendering old dates look identical from the
+  // exported CSV alone (both just start later than expected) - this line is the only place
+  // that tells them apart without opening the debug log.
+  const range = response.range;
+  const rangeNote = range
+    ? `（已请求 ${range.weekOneMonday} 至今，共 ${range.lookbackDays} 天；Attendance 实际返回的签到记录范围是 ${range.earliestDateWithSessions || "无"} 至 ${range.latestDateWithSessions || "无"}）`
+    : "";
   if (!response.items.length) {
-    historyStatus.textContent = "没有找到任何历史记录，请确认 Week 1 日期填对了、且当天已经登录 Attendance。";
+    historyStatus.textContent = `没有找到任何历史记录，请确认 Week 1 日期填对了、且当天已经登录 Attendance。${rangeNote}`;
     return;
   }
   downloadHistoryCsv(response.items);
   const found = response.items.filter((item) => item.code).length;
-  historyStatus.textContent = `已导出 ${response.items.length} 节课，其中找到签到码 ${found} 个，请查看浏览器下载。`;
+  historyStatus.textContent = `已导出 ${response.items.length} 节课，其中找到签到码 ${found} 个，请查看浏览器下载。${rangeNote}`;
 });
 
 init().catch((error) => {

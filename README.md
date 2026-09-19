@@ -7,7 +7,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> Current extension build: **v1.3.37** — fixed the full-semester history export silently dropping most weeks' attendance codes: the Gmail thread cap was a flat number sized for a single week's scan, so a multi-week export ran out of budget partway through and left later weeks (or whole units) blank even though the emails were sitting right there in the search results. The cap now scales with how many sessions/courses are actually being searched for.
+> Current extension build: **v1.3.38** — the full-semester export used to silently start weeks later than Week 1, and the confirm page's debug log could look completely empty after running it, with no way to tell "Week 1's date is wrong" apart from "the Attendance portal just didn't return the older dates". The export now logs the requested Week 1 date before anything can throw, compares the requested date range against the range Attendance actually returned session rows for, and shows that comparison directly next to the export result on the settings page — not only in the debug log. Also fixed a real race in the debug log itself: a semester export and a weekly alarm scan running at the same time could each read-modify-write the same log entry list and silently overwrite each other's entries; writes are now serialised so nothing gets lost. (v1.3.37 fixed the full-semester history export dropping most weeks' attendance codes due to a flat Gmail thread cap sized for a single week's scan.)
 
 A privacy-focused, cross-platform Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 
