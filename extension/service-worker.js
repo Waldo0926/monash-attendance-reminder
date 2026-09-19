@@ -1,7 +1,7 @@
 import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek } from "./shared.js";
 import { gmailSearchBounds, pickGmailBase, prioritiseGmailThreads } from "./gmail-source.js";
 import { EVIDENCE_CACHE_KEY, readAttendancePortal, reconcileAndStore } from "./reconciliation-v3.js";
-import { buildCodeEvidenceCache, mergePortalAttendance, needsCodeEvidence, restoreCodeEvidence } from "./reconciliation-core.js";
+import { buildCodeEvidenceCache, mergePortalAttendance, needsCodeEvidence, projectHistoricalSessions, restoreCodeEvidence } from "./reconciliation-core.js";
 
 const PRIMARY_ALARM = "attendance-primary";
 const BACKUP_ALARM = "attendance-backup";
@@ -656,6 +656,23 @@ async function buildSemesterHistory(settings) {
     failedDateCount: portal.scans.filter((scan) => !scan.ok).length
   });
 
+  // Attendance's own UI only ever renders roughly the last couple of weeks no matter what date
+  // is requested - that platform limit is the whole reason this export exists (a student who
+  // missed a code six weeks ago has no way to even see that class in Attendance any more, let
+  // alone find its code there). Fill every earlier week the portal left blank by repeating the
+  // recurring (course, session, weekday, time) pattern the portal DID confirm for its visible
+  // window - the timetable does not change week to week, so a class real enough to see this
+  // week almost certainly ran the same way in week 3. Filled rows are flagged
+  // outOfPortalRange so the CSV never claims "未签到" for a class Attendance was simply never
+  // asked to confirm either way.
+  const beforeProjection = items.length;
+  items = projectHistoricalSessions(items, settings.weekOneMonday, today);
+  await logDebug("semester history: projected sessions for weeks Attendance's UI can no longer show", {
+    beforeProjection,
+    afterProjection: items.length,
+    addedCount: items.length - beforeProjection
+  });
+
   // Codes already found by an earlier normal weekly scan are cached - restoring them first
   // means this only has to go searching Gmail/Ed/Moodle for whatever the cache doesn't
   // already have, instead of re-finding everything from scratch every time.
@@ -682,7 +699,8 @@ async function buildSemesterHistory(settings) {
       weekOneMonday: settings.weekOneMonday,
       lookbackDays,
       earliestDateWithSessions: datesWithSessions[0] || null,
-      latestDateWithSessions: datesWithSessions[datesWithSessions.length - 1] || null
+      latestDateWithSessions: datesWithSessions[datesWithSessions.length - 1] || null,
+      projectedCount: items.filter((item) => item.outOfPortalRange).length
     }
   };
 }

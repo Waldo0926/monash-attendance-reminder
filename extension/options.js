@@ -299,7 +299,7 @@ function downloadHistoryCsv(items) {
     item.day || "",
     item.attendanceDate?.iso || "",
     item.time || "",
-    item.completed ? "已签到" : "未签到",
+    item.completed ? "已签到" : item.outOfPortalRange ? "无法从Attendance查询（已超出可查询范围）" : "未签到",
     item.code || "",
     // item.codeConfidence starts life as the literal string "missing" on every freshly
     // scraped row (see mergePortalAttendance) and is only ever overwritten by a restore from
@@ -348,10 +348,13 @@ document.querySelector("#exportHistory").addEventListener("click", async () => {
   // Show the actual range Attendance handed back right next to the range we asked for. A
   // wrong Week 1 date and the portal quietly not rendering old dates look identical from the
   // exported CSV alone (both just start later than expected) - this line is the only place
-  // that tells them apart without opening the debug log.
+  // that tells them apart without opening the debug log. Attendance's UI only ever shows
+  // roughly the last couple of weeks no matter what's requested, so projectHistoricalSessions
+  // fills every earlier week from the recurring weekly pattern instead - projectedCount is how
+  // many rows exist only because of that fill-in, not because Attendance actually showed them.
   const range = response.range;
   const rangeNote = range
-    ? `（已请求 ${range.weekOneMonday} 至今，共 ${range.lookbackDays} 天；Attendance 实际返回的签到记录范围是 ${range.earliestDateWithSessions || "无"} 至 ${range.latestDateWithSessions || "无"}）`
+    ? `（已请求 ${range.weekOneMonday} 至今，共 ${range.lookbackDays} 天；Attendance 实际能查询到的签到记录范围是 ${range.earliestDateWithSessions || "无"} 至 ${range.latestDateWithSessions || "无"}，超出这个范围的 ${range.projectedCount || 0} 节课是按每周课表规律推算出来的，需要人工核对课程是否照常进行）`
     : "";
   if (!response.items.length) {
     historyStatus.textContent = `没有找到任何历史记录，请确认 Week 1 日期填对了、且当天已经登录 Attendance。${rangeNote}`;

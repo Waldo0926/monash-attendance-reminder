@@ -288,6 +288,77 @@ export function projectUpcomingSessions(items, now = new Date()) {
   return [...(items || []), ...additions];
 }
 
+// The Attendance portal's own UI only ever renders roughly the last couple of weeks, no matter
+// what date is requested - a genuine platform limit, not a bug in how this extension reads it.
+// That is exactly why this export exists: a student who missed a code six weeks ago has no way
+// to see that class in Attendance at all any more, so the whole point is to hand their unit
+// coordinator a full list of what should have happened, code included, for manual backfill -
+// not to reproduce Attendance's own already-signed-in/not-signed-in status for classes it can
+// no longer show. Reuse the exact same (course, session, weekday, time) pattern trick
+// projectUpcomingSessions uses for next classes, run backward over every earlier week from
+// Week 1 instead of forward from this week, and fill in only the weeks the portal actually left
+// blank. Each filled week is flagged outOfPortalRange so the caller can show "无法从 Attendance
+// 查询" instead of a false "未签到" - this was never confirmed absent, Attendance just cannot
+// say either way for a date that old.
+export function projectHistoricalSessions(items, weekOneMonday, now = new Date()) {
+  const anchor = new Date(`${weekOneMonday || ""}T00:00:00`);
+  if (Number.isNaN(anchor.getTime())) return items || [];
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  const anchorMonday = startOfWeekLocal(anchor);
+  const todayMonday = startOfWeekLocal(today);
+  const totalWeeks = Math.round((todayMonday - anchorMonday) / 604800000) + 1;
+  if (totalWeeks < 1) return items || [];
+
+  const patterns = new Map();
+  const seenByWeek = new Map();
+  for (const item of items || []) {
+    const weekdayIndex = WEEKDAY_INDEX[item?.day];
+    const time = normaliseClock(item?.time);
+    const course = String(item?.course || "").toUpperCase();
+    const iso = item?.attendanceDate?.iso;
+    if (weekdayIndex === undefined || !time || !course || !iso) continue;
+    const key = `${course}|${String(item.session || "").toLowerCase()}|${weekdayIndex}|${time}`;
+    if (!patterns.has(key)) patterns.set(key, item);
+    const itemDate = new Date(`${iso}T12:00:00`);
+    if (Number.isNaN(itemDate.getTime())) continue;
+    const weekIndex = Math.round((startOfWeekLocal(itemDate) - anchorMonday) / 604800000);
+    if (!seenByWeek.has(weekIndex)) seenByWeek.set(weekIndex, new Set());
+    seenByWeek.get(weekIndex).add(key);
+  }
+  // Nothing real was ever scanned (e.g. the portal returned zero rows for the whole requested
+  // range) - there is no known weekly pattern to project from, so there is nothing safe to add.
+  if (!patterns.size) return items || [];
+
+  const additions = [];
+  for (let weekIndex = 0; weekIndex < totalWeeks; weekIndex += 1) {
+    const seen = seenByWeek.get(weekIndex) || new Set();
+    const weekMonday = new Date(anchorMonday);
+    weekMonday.setDate(weekMonday.getDate() + weekIndex * 7);
+    for (const [key, sample] of patterns) {
+      if (seen.has(key)) continue;
+      const projected = new Date(weekMonday);
+      projected.setDate(projected.getDate() + ((WEEKDAY_INDEX[sample.day] + 6) % 7));
+      if (projected > today) continue; // projectUpcomingSessions already owns this week onward.
+      additions.push({
+        ...sample,
+        id: `${sample.courseId || sample.course}:${sample.sessionId || sample.session || "session"}:historical-${isoFor(projected)}`,
+        code: "",
+        codeConfidence: "missing",
+        confidence: "missing",
+        completed: false,
+        upcoming: false,
+        outOfPortalRange: true,
+        context: "",
+        entryUrl: "",
+        sourceUrl: "",
+        attendanceSourceUrl: "",
+        attendanceDate: { iso: isoFor(projected), key: attendanceDateKeyFor(projected) }
+      });
+    }
+  }
+  return [...(items || []), ...additions];
+}
+
 export function mergePortalAttendance(items, sessions, attendanceSourceUrl = "https://attendance.monash.edu.my/student/Units.aspx") {
   const byKey = new Map((items || []).map((item) => [attendanceIdentity(item), { ...item }]));
   for (const session of sessions || []) {
