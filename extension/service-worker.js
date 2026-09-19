@@ -340,6 +340,15 @@ async function automaticSourceScans(items, settings) {
       : (explicitCourses.length ? explicitCourses : inferredCourses);
     page.courses = [...new Set(ownerCourses.map((value) => String(value).toLowerCase()))];
     scans.push(page);
+    // Temporary diagnostic: a semester export can come back with a code missing even when
+    // the source email is confirmed to exist and to contain the code in plain sight, with no
+    // obvious reason from reading the matching code alone. Logging what this actually
+    // extracted from each Gmail page is the fastest way to tell whether the thread was even
+    // opened, and whether the code survived being flattened from an HTML table into plain
+    // text, without guessing further from static code. Safe to remove once that's resolved.
+    if (/mail\.google\.com/i.test(url)) {
+      await logDebug(`gmail scan ${url}`, { ok: page.ok, title: page.title, courses: page.courses, textExcerpt: (page.text || "").slice(0, 3000) });
+    }
     return page;
   };
 
@@ -399,6 +408,15 @@ async function automaticSourceScans(items, settings) {
     const perCourseThreadLimit = Math.max(4, maxSessionsForOneCourse + 2);
     const totalThreadLimit = Math.max(24, weekCodes.length * perCourseThreadLimit);
     const threads = prioritiseGmailThreads(search.gmailThreads, weekCodes, totalThreadLimit, perCourseThreadLimit);
+    // Temporary diagnostic, see the note above scans.push(page) for why. This shows exactly
+    // which of the threads Gmail actually rendered for this week's search got selected to be
+    // opened, vs. discarded before ever being read.
+    await logDebug(`gmail week bucket ${query}`, {
+      weekCodes,
+      rawThreadCount: (search.gmailThreads || []).length,
+      selectedThreadCount: threads.length,
+      selectedThreads: threads.map((thread) => ({ id: thread.id, label: thread.label }))
+    });
     for (const thread of threads) {
       const resolved = confidentlyResolvedCourses(scans, weekItems);
       if (resolved.size >= weekCodes.length) break;
