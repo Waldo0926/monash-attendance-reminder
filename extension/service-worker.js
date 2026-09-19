@@ -326,8 +326,17 @@ async function automaticSourceScans(items, settings) {
     visited.add(url);
     const { courses: explicitCourses = [], ...readOptions } = options || {};
     let page = await readPage(url, readOptions);
+    // Confirmed by hand against a real FIT2109 announcement: some staff paste the code table
+    // into Ed as a screenshot rather than typing it, and Ed's email notification carries that
+    // same image through to Gmail - the "Workshops:"/"Tutorials:" headers arrive as real text
+    // but every code sits inside a <img> the announcement pasted in, invisible to
+    // matchCodesToAttendance no matter how the text-matching regex is tuned. content.js already
+    // collects large-enough images from every page, Gmail included, but this gate used to only
+    // ever send Ed/Moodle pages on to OCR - an opened Gmail message with the exact same
+    // screenshot never got OCR'd, so its codes were silently unreachable.
     const isCodePage = /edstem\.org\/au\/courses\/\d+\/discussion\/\d+/.test(url)
-      || /learning\.monash\.edu\/course\/view\.php.*(?:[?&]section=|#section-)/.test(url);
+      || /learning\.monash\.edu\/course\/view\.php.*(?:[?&]section=|#section-)/.test(url)
+      || /mail\.google\.com\/mail\/u\/\d+\/#all\//.test(url);
     if (page.ok && page.images?.length && isCodePage) page = await ocrPageImages(page);
     const titleCourses = courseCodesInText(page.title || "", codes);
     const inferredCourses = courseCodesInText(page.text || "", codes);
