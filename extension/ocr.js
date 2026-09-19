@@ -123,9 +123,19 @@ function pairRowsWithCodeColumn(rowText, codes) {
     offset = 0;
   }
 
+  // Confirmed against the real FIT2102 Aug 18 Workshop post: that row is published as its
+  // own tiny 841x42 strip, and the whole-row pass read the code as "CcQlTe" (garbled). That
+  // garbled tail still happens to look like a plausible 5-character code ("CCQLT") once
+  // uppercased, purely because it sits next to a non-ASCII character that regex \b treats as
+  // a boundary - it is not a real reading of the code cell. Skipping this row here on that
+  // basis threw away the far more reliable code the whitelisted crop pass found for the same
+  // cell. A row's own reading should only pre-empt the crop-derived code when the two agree;
+  // agreement is exactly what the anchor pass above already requires, so apply the same bar
+  // here instead of accepting any pattern-shaped fragment on its own.
   const stitched = [];
   rows.forEach((row, rowIndex) => {
-    if (fiveCharCodes(row).some(plausibleCode)) return;
+    const ownCodes = fiveCharCodes(row).filter(plausibleCode);
+    if (ownCodes.some((code) => codes.includes(code))) return;
     const code = codes[rowIndex + offset];
     if (code) stitched.push(`${row} ${code}`);
   });
