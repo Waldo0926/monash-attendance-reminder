@@ -6,6 +6,16 @@ import { buildCodeEvidenceCache, mergePortalAttendance, needsCodeEvidence, resto
 const PRIMARY_ALARM = "attendance-primary";
 const BACKUP_ALARM = "attendance-backup";
 
+// Groups an ISO date string by the Monday that starts its week, so automaticSourceScans can
+// run one Gmail search per week instead of one across a whole semester export - see the
+// comment above its weekBuckets loop for why that matters.
+function weekBucketKey(iso) {
+  const date = new Date(`${iso || ""}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - ((date.getDay() + 6) % 7));
+  return `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
+}
+
 function nextAlarm(weekday, hour, minute) {
   const now = new Date();
   const target = new Date(now);
@@ -80,7 +90,15 @@ function mergeSourceScanCodes(items, sourceScans) {
       const index = scoped[scopedIndex].index;
       const item = result[index];
       if (candidate.code && confidenceRank(candidate.confidence) > confidenceRank(item.confidence)) {
-        replacements.set(index, { ...item, code: candidate.code, confidence: candidate.confidence, context: candidate.context, sourceUrl: scan.url });
+        // codeConfidence must move together with confidence here. codeConfidenceOf() already
+        // falls back to `confidence` when `code` is set, so the in-extension logic (needing
+        // evidence, deciding what to cache) was never actually broken by this - but options.js's
+        // CSV export reads `item.codeConfidence || item.confidence` directly, and every fresh
+        // item starts life with codeConfidence: "missing" (see mergePortalAttendance). Leaving
+        // that stale "missing" string in place after a code is matched here made the exported
+        // history show "missing" for a row that clearly has a code in the very next column,
+        // for any code found this way rather than restored from the evidence cache.
+        replacements.set(index, { ...item, code: candidate.code, confidence: candidate.confidence, codeConfidence: candidate.confidence, context: candidate.context, sourceUrl: scan.url });
       }
     });
     result = result.map((item, index) => replacements.get(index) || item);
@@ -330,25 +348,46 @@ async function automaticSourceScans(items, settings) {
   // units publish Week N attendance codes several days in advance.
   const gmailTabs = await chrome.tabs.query({ url: "https://mail.google.com/*" });
   const gmailBase = pickGmailBase(gmailTabs);
-  const { after, before } = gmailSearchBounds(items);
-  const query = `(${codes.join(" OR ")}) attendance${after && before ? ` after:${after} before:${before}` : " newer_than:21d"}`;
-  const search = await scan(`${gmailBase}#search/${encodeURIComponent(query)}`, { maxMs: 25000, waitFor: "tr.zA, [data-legacy-thread-id]", minMs: 2000 });
-  if (search?.ok) {
+
+  // Gmail's own search results list is virtualised: it renders roughly one page's worth of
+  // conversation rows, and this only ever reads whatever is already sitting in that DOM - it
+  // never scrolls or clicks through to a second page. A normal weekly scan's date range is
+  // narrow enough that every relevant email already fits on that first page, so this limit was
+  // never visible there. buildSemesterHistory() reused this exact function unchanged but with
+  // `items` spanning the whole semester in one search; a query that wide can easily match far
+  // more conversations across a couple of months than Gmail renders at once, and which weeks
+  // survive onto that first page depends on how much other mail exists around them, not on
+  // anything this code controls. Raising prioritiseGmailThreads' selection cap (see below) does
+  // nothing for a week whose email was never even in the scraped list to begin with - which is
+  // exactly why a FIT2109 week that a normal weekly scan finds without any trouble could still
+  // come back blank here even after that cap was widened. Running one Gmail search per week
+  // keeps every individual query exactly as narrow as a normal weekly scan's, so nothing this
+  // reads from Gmail ever needs a second page - the cost is one Gmail search per week instead
+  // of one for the whole export, which is the right trade for a feature that already warns it
+  // can take several minutes.
+  const weekBuckets = new Map();
+  items.forEach((item) => {
+    const key = weekBucketKey(item?.attendanceDate?.iso);
+    if (!weekBuckets.has(key)) weekBuckets.set(key, []);
+    weekBuckets.get(key).push(item);
+  });
+
+  for (const weekItems of weekBuckets.values()) {
+    const weekCodes = [...new Set(weekItems.map((item) => item.course).filter(Boolean))];
+    if (!weekCodes.length) continue;
+    const { after, before } = gmailSearchBounds(weekItems);
+    const query = `(${weekCodes.join(" OR ")}) attendance${after && before ? ` after:${after} before:${before}` : " newer_than:21d"}`;
+    const search = await scan(`${gmailBase}#search/${encodeURIComponent(query)}`, { maxMs: 25000, waitFor: "tr.zA, [data-legacy-thread-id]", minMs: 2000 });
+    if (!search?.ok) continue;
+
     // The old eight-message cap was enough for one or two FIT units, but it starved other
     // courses on accounts with many engineering attendance announcements. Rank exact code
     // messages first, reserve candidates across every detected course, then stop as soon as
-    // every Attendance row is confidently resolved.
-    //
-    // A flat 4-per-course / 24-total cap is plenty for a normal weekly scan (one session per
-    // course, one Attendance Code email to find), but buildSemesterHistory() reuses this exact
-    // function over a whole semester's worth of sessions. With the cap left flat, the
-    // round-robin below spent its per-course budget on the first few weeks it saw and never
-    // got back to the rest, so a semester export quietly returned only the most recent couple
-    // of weeks' codes while every earlier week stayed "missing" - even though the emails were
-    // sitting right there in the search results. Scale both caps with how many sessions are
-    // actually being searched for instead of assuming there is only ever one.
+    // every Attendance row for this week is confidently resolved. Scaling with how many
+    // sessions actually fall in this one week (rather than the whole semester) is what keeps
+    // each individual search this narrow in the first place - the two fixes work together.
     const sessionsPerCourse = new Map();
-    items.forEach((item) => {
+    weekItems.forEach((item) => {
       const key = String(item.course || "").toLowerCase();
       if (!key) return;
       sessionsPerCourse.set(key, (sessionsPerCourse.get(key) || 0) + 1);
@@ -358,12 +397,12 @@ async function automaticSourceScans(items, settings) {
     // week's announcement into two threads, same margin the old flat cap of 4 gave a 1-2
     // session weekly scan.
     const perCourseThreadLimit = Math.max(4, maxSessionsForOneCourse + 2);
-    const totalThreadLimit = Math.max(24, codes.length * perCourseThreadLimit);
-    const threads = prioritiseGmailThreads(search.gmailThreads, codes, totalThreadLimit, perCourseThreadLimit);
+    const totalThreadLimit = Math.max(24, weekCodes.length * perCourseThreadLimit);
+    const threads = prioritiseGmailThreads(search.gmailThreads, weekCodes, totalThreadLimit, perCourseThreadLimit);
     for (const thread of threads) {
-      const resolved = confidentlyResolvedCourses(scans, items);
-      if (resolved.size >= codes.length) break;
-      const threadCourses = courseCodesInText(thread.label || "", codes).map((code) => code.toLowerCase());
+      const resolved = confidentlyResolvedCourses(scans, weekItems);
+      if (resolved.size >= weekCodes.length) break;
+      const threadCourses = courseCodesInText(thread.label || "", weekCodes).map((code) => code.toLowerCase());
       if (threadCourses.length && threadCourses.every((course) => resolved.has(course))) continue;
       await scan(`${gmailBase}#all/${thread.id}`, {
         maxMs: 20000,

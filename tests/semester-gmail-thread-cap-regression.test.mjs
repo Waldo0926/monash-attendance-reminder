@@ -38,7 +38,7 @@ test("a flat 24-total cap drops emails once several courses each have many weekl
   assert.equal(scaled.length, 30, "every course must get every week's attendance-code email once the caps scale with the actual session count");
 });
 
-test("automaticSourceScans scales both Gmail thread caps with the number of sessions being searched for, not a flat weekly-scan number", () => {
+test("automaticSourceScans scales Gmail thread caps per week, not with the whole semester's session count", () => {
   const serviceWorker = read("../extension/service-worker.js");
 
   assert.doesNotMatch(
@@ -46,18 +46,32 @@ test("automaticSourceScans scales both Gmail thread caps with the number of sess
     /prioritiseGmailThreads\(search\.gmailThreads,\s*codes,\s*24\)/,
     "must not call prioritiseGmailThreads with the old hardcoded weekly-scan limit of 24"
   );
+  assert.match(
+    serviceWorker,
+    /prioritiseGmailThreads\(search\.gmailThreads,\s*weekCodes,\s*totalThreadLimit,\s*perCourseThreadLimit\)/,
+    "must scale the cap from weekCodes/weekItems (one week's worth), not the whole semester's items"
+  );
+  assert.match(serviceWorker, /sessionsPerCourse/, "must derive the thread cap from how many sessions per course are actually in the current bucket");
+});
+
+// A raised selection cap only helps once a thread has actually made it into
+// search.gmailThreads. Gmail's own search results list is virtualised - it renders roughly one
+// page of conversation rows and this extension only ever reads whatever the DOM already has,
+// it never scrolls for more. A normal weekly scan's date range is narrow enough that every
+// relevant email already fits on that first page; a single search spanning a whole semester is
+// not, and no amount of raising prioritiseGmailThreads' limit changes how many rows Gmail chose
+// to render in the first place. Splitting the semester into one Gmail search per week is what
+// actually keeps each query as narrow as a normal weekly scan's.
+test("automaticSourceScans issues one Gmail search per week instead of one across the whole date range", () => {
+  const serviceWorker = read("../extension/service-worker.js");
+  assert.match(serviceWorker, /function weekBucketKey\(/, "must group items into weekly buckets before searching Gmail");
+  assert.match(serviceWorker, /weekBuckets\.get\(key\)\.push\(item\)/);
 
   const fn = serviceWorker.slice(serviceWorker.indexOf("async function automaticSourceScans"));
-  const callSite = fn.slice(0, fn.indexOf("prioritiseGmailThreads(search.gmailThreads") + 200);
+  const loopStart = fn.indexOf("for (const weekItems of weekBuckets.values())");
+  assert.ok(loopStart > -1, "the Gmail search + thread-opening block must run inside a per-week loop");
 
-  assert.match(
-    callSite,
-    /sessionsPerCourse/,
-    "must derive the thread cap from how many sessions per course are actually in `items`"
-  );
-  assert.match(
-    callSite,
-    /prioritiseGmailThreads\(search\.gmailThreads,\s*codes,\s*totalThreadLimit,\s*perCourseThreadLimit\)/,
-    "must pass a dynamically computed total and per-course limit into prioritiseGmailThreads"
-  );
+  const loopBody = fn.slice(loopStart, fn.indexOf("const gmailResolved = confidentlyResolvedCourses(scans, items);"));
+  assert.match(loopBody, /gmailSearchBounds\(weekItems\)/, "each week's search bounds must come from that week's own items, not the whole semester's");
+  assert.match(loopBody, /scan\(`\$\{gmailBase\}#search\/\$\{encodeURIComponent\(query\)\}`/, "each week must issue its own Gmail search");
 });

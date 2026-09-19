@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, loadSettings, sendMessageWithTimeout, validSchedule } from "./shared.js";
+import { codeConfidenceOf } from "./reconciliation-core.js";
 
 let settings;
 const coursesRoot = document.querySelector("#courses");
@@ -300,7 +301,14 @@ function downloadHistoryCsv(items) {
     item.time || "",
     item.completed ? "已签到" : "未签到",
     item.code || "",
-    item.codeConfidence || item.confidence || "",
+    // item.codeConfidence starts life as the literal string "missing" on every freshly
+    // scraped row (see mergePortalAttendance) and is only ever overwritten by a restore from
+    // the evidence cache - a code matched fresh during this export could leave it stale even
+    // though item.code and item.confidence are both correct. codeConfidenceOf() is the one
+    // place that already knows how to reconcile the two; reading it directly here (instead of
+    // `item.codeConfidence || item.confidence`) is what used to make a row with a real code
+    // show up as "missing" in the exported CSV.
+    codeConfidenceOf(item),
     item.sourceUrl || item.codeSourceUrl || ""
   ]);
   const csv = [header, ...rows].map((row) => row.map(csvEscape).join(",")).join("\r\n");
