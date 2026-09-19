@@ -126,7 +126,19 @@ export function findCourseLinks(links, courseCodes, { hrefPattern, normaliseHref
   return [...seen.entries()].map(([href, courses]) => ({ href, courses }));
 }
 
-export function edThreadLinks(links) {
+// Confirmed by hand against the real FIT2102 Ed course: it does not keep one persistent
+// "Attendance Codes" thread that gets edited in place, it posts a brand new thread every
+// single week ("Week 8 Attendance Codes", "Week 7 International Students Attendance
+// Codes", ...). The old flat `.slice(0, 2)` cap was sized for a normal weekly scan, where
+// only the current week's thread could possibly matter - but automaticSourceScans is the
+// same function a full semester export reuses with `items` spanning every week that still
+// needs a code. Against that cap, only the one or two highest-numbered threads a course
+// happens to post ever get opened, and every earlier week is silently starved no matter
+// how many discussion links this course actually has. When the caller knows which teaching
+// weeks still need a code (targetWeeks), pick the single best-matching thread for each of
+// those weeks instead of a fixed global count, so a ten-week export can open ten threads
+// just as easily as a weekly scan opens one.
+export function edThreadLinks(links, targetWeeks) {
   const seen = new Map();
   for (const link of links || []) {
     const href = stripHash(link.href);
@@ -139,9 +151,29 @@ export function edThreadLinks(links) {
     const previous = seen.get(href);
     if (!previous || priority.kind < previous.kind || (priority.kind === previous.kind && priority.week > previous.week)) seen.set(href, priority);
   }
-  return [...seen.entries()]
-    .sort((a, b) => a[1].kind - b[1].kind || b[1].week - a[1].week)
-    .map(([href]) => href)
+  const entries = [...seen.entries()].map(([href, priority]) => ({ href, ...priority }));
+
+  const targets = [...new Set((targetWeeks || []).filter(Number.isFinite))];
+  if (targets.length) {
+    const byWeek = new Map();
+    for (const entry of entries) {
+      if (!entry.week) continue;
+      const previous = byWeek.get(entry.week);
+      if (!previous || entry.kind < previous.kind) byWeek.set(entry.week, entry);
+    }
+    const selected = targets.map((week) => byWeek.get(week)).filter(Boolean);
+    // A course can also run one general, never-week-numbered "Attendance Codes" thread
+    // alongside (or instead of) weekly ones - keep the single best one of those too, the
+    // same way the no-targets path below already would.
+    const general = entries.filter((entry) => !entry.week).sort((a, b) => a.kind - b.kind)[0];
+    if (general) selected.push(general);
+    const hrefs = [...new Set(selected.map((entry) => entry.href))];
+    if (hrefs.length) return hrefs;
+  }
+
+  return entries
+    .sort((a, b) => a.kind - b.kind || b.week - a.week)
+    .map((entry) => entry.href)
     .slice(0, 2);
 }
 

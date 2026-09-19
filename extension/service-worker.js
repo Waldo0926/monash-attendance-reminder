@@ -456,10 +456,24 @@ async function automaticSourceScans(items, settings) {
   for (const course of edCourses.slice(0, 8)) {
     const list = await scan(course.href, { waitFor: "a[href*='/discussion/']", courses: course.courses });
     if (!list?.ok) continue;
+    // A normal weekly scan's `items` only ever spans the current (and maybe last) week, so
+    // this comes back with at most one or two weeks and edThreadLinks' old flat cap of 2
+    // never mattered. buildSemesterHistory reuses this same function with `items` spanning
+    // every week still missing a code - without telling edThreadLinks which weeks those
+    // are, it kept defaulting to whichever one or two threads happened to rank highest,
+    // starving every earlier week even when this course posts a separate thread for each
+    // one. Deriving the actual missing weeks here (same approach the Moodle fallback below
+    // already uses) lets edThreadLinks open exactly the threads this export still needs.
+    const courseItems = items.filter((item) => course.courses.includes(String(item.course || "").toLowerCase()));
+    const edTargetWeeks = settings.weekOneMonday
+      ? [...new Set(courseItems
+        .map((item) => item.attendanceDate?.iso && teachingWeek({ weekOneMonday: settings.weekOneMonday }, new Date(`${item.attendanceDate.iso}T12:00:00`)))
+        .filter(Number.isFinite))]
+      : [];
     // The thread body renders after the list; give it a floor so we don't read a page
     // that has the sidebar painted but the post itself still loading. Keep the week number
     // from the selected attendance-thread title as a strong hint for Moodle later.
-    for (const threadUrl of edThreadLinks(list.links)) {
+    for (const threadUrl of edThreadLinks(list.links, edTargetWeeks)) {
       const meta = list.links.find((link) => String(link.href || "").split("#")[0] === threadUrl);
       const week = Number(/\bweek\s*(\d{1,2})\b/i.exec(`${meta?.label || ""} ${meta?.context || ""}`)?.[1] || 0);
       if (week) weekHints.add(week);
