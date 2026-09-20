@@ -98,18 +98,31 @@ A completed record is displayed as completed and cannot be submitted again. Ever
 
 ## Install in Chrome (Windows / macOS / Linux)
 
-1. Download or clone this repository.
-2. Open `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Select **Load unpacked**.
-5. Choose the `extension` folder from this repository.
-6. Pin **Monash Attendance Helper** if desired.
-7. Open the extension settings.
-8. Keep automatic Attendance discovery enabled and configure reminder times.
-9. Keep Gmail, Moodle, Ed, and Monash Attendance signed in to the same Chrome profile.
-10. Click **Save, then test now**. This runs the preliminary scan and final Attendance reconciliation as one background step and reports final counts once both are done - you don't need to keep the settings page open the whole time.
+1. Open this repository's GitHub page, click the green **Code** button, then **Download ZIP**. (If you already use git, `git clone` works too.)
+2. Find the downloaded ZIP file, usually in your Downloads folder, and extract it. On Windows, right click the file and choose **Extract All**. On macOS, double click the ZIP to unzip it.
+3. Open Chrome and go to `chrome://extensions`.
+4. Turn on **Developer mode** using the toggle in the top right corner.
+5. Click **Load unpacked**.
+6. In the folder picker, open the extracted folder and select the **extension** subfolder inside it, not the top level repository folder.
+7. The extension icon should now appear in the toolbar. Click the puzzle piece icon next to the address bar and pin **Monash Attendance Helper** if you want quick access.
+8. Click the extension icon, or right click it and choose **Options**, to open the settings page.
+9. Sign in to Gmail, Monash Moodle, Ed Discussion (if your units use it), and Monash Attendance in the same Chrome profile the extension is running in.
+10. On the settings page, keep automatic Attendance discovery turned on, set this semester's Week 1 Monday date, and choose your reminder time(s).
+11. Click **Save, then test now**. This runs the preliminary scan and the final Attendance reconciliation as one background step, and reports how many activities and codes it found once both are done. You don't need to keep the settings page open the whole time.
 
-After updating the repository locally, return to `chrome://extensions` and reload the unpacked extension. The displayed version should match `extension/manifest.json`.
+After pulling repository updates later, return to `chrome://extensions` and reload the unpacked extension. The version shown there should match `extension/manifest.json`.
+
+## Using it day to day
+
+Once set up, the extension keeps discovering and scanning in the background and sends a Chrome notification at the reminder time(s) you configured.
+
+1. When a reminder notification appears, click it, or click the extension icon, to open the review page.
+2. Each class shows up as a card labelled completed, not started, high confidence, needs review, or not found, the same statuses described above under Completed attendance records.
+3. For a high confidence or needs review card, check the code against its source (Gmail, Ed, or Moodle) if you are unsure, tick the attendance declaration checkbox, and submit.
+4. Completed and not started classes are shown for information only and cannot be submitted from here.
+5. Use the **Export semester history** button on the settings page any time you want a full CSV record of the semester so far, for example before asking a unit coordinator for a manual correction.
+
+Only ever submit attendance for classes you actually attended.
 
 ## Exporting this semester's history
 
