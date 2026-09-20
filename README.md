@@ -108,19 +108,28 @@ A completed record is displayed as completed and cannot be submitted again. Ever
 8. Click the extension icon, or right click it and choose **Options**, to open the settings page.
 9. Sign in to Gmail, Monash Moodle, Ed Discussion (if your units use it), and Monash Attendance in the same Chrome profile the extension is running in.
 10. On the settings page, keep automatic Attendance discovery turned on, set this semester's Week 1 Monday date, and choose your reminder time(s).
-11. Click **Save, then test now**. This runs the preliminary scan and the final Attendance reconciliation as one background step, and reports how many activities and codes it found once both are done. You don't need to keep the settings page open the whole time.
+11. Click **Save, then test now**. This runs the preliminary scan and the final Attendance reconciliation as one background step, and reports how many classes and codes it found once both are done. You don't need to keep the settings page open the whole time.
 
 After pulling repository updates later, return to `chrome://extensions` and reload the unpacked extension. The version shown there should match `extension/manifest.json`.
 
 ## Using it day to day
 
-Once set up, the extension keeps discovering and scanning in the background and sends a Chrome notification at the reminder time(s) you configured.
+Once set up, click the extension icon any time you want to check for new codes.
 
-1. When a reminder notification appears, click it, or click the extension icon, to open the review page.
-2. Each class shows up as a card labelled completed, not started, high confidence, needs review, or not found, the same statuses described above under Completed attendance records.
-3. For a high confidence or needs review card, check the code against its source (Gmail, Ed, or Moodle) if you are unsure, tick the attendance declaration checkbox, and submit.
-4. Completed and not started classes are shown for information only and cannot be submitted from here.
-5. Use the **Export semester history** button on the settings page any time you want a full CSV record of the semester so far, for example before asking a unit coordinator for a manual correction.
+![Extension popup showing codes found this week and the Find codes now, View confirm page, and Settings buttons](docs/screenshots/popup.png)
+
+1. The popup shows how many codes have been found so far this week (for example "4/5"), plus three buttons: **Find codes now**, **View confirm page**, and **Settings**.
+2. Click **Find codes now** to trigger a fresh scan for the most recent codes. Once it finishes, the extension opens the confirm page automatically.
+3. On the confirm page, each class is listed with its own checkbox, day and time, current status (completed, high confidence, needs review, and so on, described above under Completed attendance records), and the code once found.
+
+![Confirm page listing classes with their codes, status, and the attendance declaration checkbox](docs/screenshots/confirm-page.png)
+
+4. Tick the classes you actually attended, tick the attendance declaration checkbox at the bottom, and click **Confirm and submit selected records**. The extension fills in the code and submits it to Monash Attendance for you.
+5. A reminder notification opens the same confirm page directly at the time(s) you configured, so you don't have to remember to check it yourself.
+
+If your attendance percentage looks low and you suspect an earlier class was never submitted, open the extension's **Settings** page and use **Export semester history** under "This semester's history". It rescans every class from Week 1 through today, tries to find a code for each one, and downloads the result as a spreadsheet you can keep or send to your unit coordinator.
+
+![Settings page with the Week 1 Monday date, Save and enable button, and Export semester history button highlighted](docs/screenshots/export-history.png)
 
 Only ever submit attendance for classes you actually attended.
 
