@@ -56,7 +56,7 @@ test("reports image content type, byte length and magic bytes when decoding fail
 
 test("manifest keeps OCR in an offscreen document with local workers and WebAssembly enabled", async () => {
   const manifest = JSON.parse(await text("manifest.json"));
-  assert.equal(manifest.version, "1.3.45");
+  assert.equal(manifest.version, "1.3.46");
   assert.ok(manifest.permissions.includes("offscreen"));
   assert.match(manifest.content_security_policy.extension_pages, /wasm-unsafe-eval/);
   assert.match(manifest.content_security_policy.extension_pages, /worker-src 'self'/);
@@ -184,6 +184,15 @@ test("v1.3.13 preserves multi-row wide Ed workshop images while keeping one-row 
   assert.match(ocr, /PSM\.SINGLE_BLOCK, "wide-block"/);
   assert.match(ocr, /PSM\.SINGLE_LINE, "wide-single-line"/);
   assert.match(ocr, /const blockRows = sessionRows\(block\)/);
-  assert.match(ocr, /rowsNeedCodeRescue/);
   assert.match(ocr, /lineCodes\.length \|\| sessionRows\(line\)\.length/);
+});
+
+// v1.3.46 removed rowsNeedCodeRescue (see tests/ocr-wideshort-crop-gate.test.mjs): a garbled
+// block-pass fragment that merely looked code-shaped could satisfy that count comparison and
+// skip the code-column crop pass entirely, which is exactly what happened on the real
+// FIT2102 Workshop 01 (Aug 18) image this test's own v1.3.13 rescue was meant to cover.
+test("v1.3.46 runs the wideShort code-column crop unconditionally instead of gating it on a codes-vs-rows count", async () => {
+  const ocr = await text("ocr.js");
+  assert.doesNotMatch(ocr, /rowsNeedCodeRescue/);
+  assert.match(ocr, /runPass\(normalized\.codeBlob, PSM\.SPARSE_TEXT, "wide-code-zone"/);
 });

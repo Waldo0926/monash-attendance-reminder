@@ -206,15 +206,23 @@ async function recognise(image) {
     // candidate pool or hide the good SINGLE_BLOCK result.
     if (line && (lineCodes.length || sessionRows(line).length)) syntheticRows.push(line);
 
-    // If the block pass already recovered every visible session row/code, stop here. This is
-    // the fast path for FIT2109's 3-row Workshop image. For a true one-row attachment such as
-    // FIT2102 JY4H6, SINGLE_LINE normally carries the code even when SINGLE_BLOCK drops it.
+    // This used to only run the dedicated code-column crop below once the block/line pass
+    // already looked short a code (fewer codes found than rows found). Traced against the
+    // real FIT2102 Workshop 01 (Aug 18) Ed post: that single-row strip's block pass read the
+    // code cell as garbage ("CcQlTe" plus an accented character), and that garbage happened
+    // to contain a run of 5 plain A-Z0-9 characters once uppercased - for the same reason
+    // documented on pairRowsWithCodeColumn below, the accented character reads as a word
+    // boundary to the regex, not because a real code was found. That fake "code" made the
+    // count look complete (1 code for 1 row), so the crop pass - the one actually built to
+    // read this column reliably - never even ran, and the row exported blank. Running the
+    // crop unconditionally, gated only on the image being croppable at all, and letting
+    // pairRowsWithCodeColumn's own agreement check (not a count) decide which reading to
+    // trust, closes that gap.
     const combinedCodes = [...new Set([...blockCodes, ...lineCodes])];
-    const rowsNeedCodeRescue = blockRows.length && combinedCodes.length < blockRows.length;
-    if (!combinedCodes.length || rowsNeedCodeRescue) {
-      const codeNormal = await runPass(normalized.codeBlob, PSM.SPARSE_TEXT, "wide-code-zone", { whitelist: CODE_WHITELIST, collect: false });
-      const codeBinary = await runPass(normalized.codeThresholdBlob, PSM.SPARSE_TEXT, "wide-code-zone-threshold", { whitelist: CODE_WHITELIST, collect: false });
-      const imageCodes = bestCodeSequence(codeNormal, codeBinary);
+    const codeNormal = await runPass(normalized.codeBlob, PSM.SPARSE_TEXT, "wide-code-zone", { whitelist: CODE_WHITELIST, collect: false });
+    const codeBinary = await runPass(normalized.codeThresholdBlob, PSM.SPARSE_TEXT, "wide-code-zone-threshold", { whitelist: CODE_WHITELIST, collect: false });
+    const imageCodes = bestCodeSequence(codeNormal, codeBinary);
+    if (imageCodes.length) {
       syntheticRows.push(...pairRowsWithCodeColumn(block || line, imageCodes));
       if (imageCodes.length === 1 && !combinedCodes.length) {
         syntheticRows.push(`${line || block || image.context || image.alt || ""} ${imageCodes[0]}`.trim());

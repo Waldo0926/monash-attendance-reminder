@@ -49,7 +49,7 @@ function loadPureHelpers() {
 test("a garbled block-pass fragment that merely looks code-shaped does not block the whitelisted crop's code", () => {
   const pairRowsWithCodeColumn = loadPureHelpers();
   const rowText =
-    "Workshop                                                             Tuesday, 18 Aug         01                             4:00PM                                    CcQlTeé\n";
+    "Workshop                                                             Tuesday, 18 Aug         01                             4:00PM                                    CcQlTé\n";
   const cropCodes = ["CQIT6"];
   const stitched = pairRowsWithCodeColumn(rowText, cropCodes);
   assert.equal(stitched.length, 1, "the crop-derived code must still be attached to the row");
