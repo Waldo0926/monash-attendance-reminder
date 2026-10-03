@@ -26,6 +26,8 @@ The default mode does **not** require a manually entered timetable. It reads rec
   3. **Moodle** — the relevant unit, recent Week/section pages, and Attendance activities.
 - Parses text-based attendance tables directly.
 - Uses bundled, local OCR for attendance tables posted as images.
+- Reads attendance codes that a unit posts as a **Word (.docx) file** on Moodle or through a forum email: the file is fetched into memory, unzipped there, and its table screenshots go through the same local OCR. Nothing is saved to disk and no download dialog appears.
+- Follows each unit's own **Week numbers across the mid-semester break**. It learns the real week dates from Moodle's section headers instead of counting calendar weeks, so "Week 9" is still found when the break makes it calendar week 10.
 - Matches codes against available course, activity type, class number, date, and time information.
 - Marks uncertain matches for manual review instead of silently guessing.
 - Qualifies every status by "this week" or "last week" — no code found this week is usually just the teacher not having posted it yet; the same gap last week means Attendance still hasn't shown it as completed and is worth checking by hand.
@@ -174,6 +176,8 @@ The extension does not upload the following information to this repository or it
 
 OCR runs locally inside the extension. The OCR worker, WebAssembly core, and English recognition model are bundled with the extension package rather than sending screenshots to a third-party OCR service.
 
+The extension only talks to Monash Attendance, Moodle, Ed, Gmail, and the signed download host Moodle redirects uploaded files to (`d25zr1xy094zys.cloudfront.net`), using the student's own signed-in session. It has no server, analytics, advertising, or remotely hosted code. Settings, results, and the debug log stay in the browser's local extension storage. See the full [Privacy Policy](PRIVACY.md).
+
 ## Safety by design
 
 An attendance code is not proof that a student attended a class. For that reason, the extension deliberately keeps a human confirmation step:
@@ -190,6 +194,8 @@ An attendance code is not proof that a student attended a class. For that reason
 - Gmail, Moodle, Ed, and Monash Attendance may change their page structures over time.
 - Expired login sessions still require the student to sign in again.
 - OCR can make mistakes, so image-derived results should be checked when marked for review.
+- Only Word (.docx) attendance files are read; codes inside other file types, such as PDFs, are not.
+- Moodle serves uploaded files through a signed CloudFront link, so the extension asks for permission to that one host. After updating from a version older than v1.3.48, reload the extension in `chrome://extensions`.
 - Some units may publish attendance information differently from the currently supported patterns.
 - Some Monash pages can visibly render usable content while Chrome still reports a tab as `loading`; the final reconciliation reads the usable DOM directly, but a genuinely unavailable page can still fail - and gets recorded in the debug log when it does.
 - The lookback window only extends through the end of the current week; it never reads ahead into the next teaching week.
