@@ -7,7 +7,7 @@
 
 [English](README.md) | **简体中文**
 
-> 当前扩展版本：**v1.3.46**。完整版本记录见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
+> 当前扩展版本：**v1.3.47**。完整版本记录见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
 
 一个注重隐私、**跨平台**的 Chrome 扩展，帮助 Monash 学生自动发现近期需要处理的考勤活动，从 Gmail、Ed Discussion 和 Moodle 中寻找对应的 Attendance Code，在提交前集中核对，并且只会在学生明确确认后才提交。
 

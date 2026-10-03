@@ -59,21 +59,76 @@ export function recentAttendanceDates(now = new Date(), count = 7) {
   return dates;
 }
 
+// Counting calendar weeks from Week 1 goes wrong as soon as the semester has a non-teaching
+// week: S2 2026 Malaysia's mid-semester break (Mon 21 Sep) made Mon 28 Sep calendar week 10
+// while every unit labels it "Week 9", so Ed and Moodle were searched for a Week 10 post that
+// did not exist yet. settings.weekAnchors holds {week, monday} pairs read off Moodle's own
+// "Week N ... Mon D Month YY" section dates; a date belongs to the latest anchor at or before
+// it. Anchors that don't fit this Week 1 (another semester, or a misread date) are ignored.
+export function weekAnchors(settings) {
+  const one = new Date(`${settings?.weekOneMonday || ""}T00:00:00`);
+  if (Number.isNaN(one.getTime())) return [];
+  const anchors = [{ week: 1, monday: one }];
+  for (const anchor of settings?.weekAnchors || []) {
+    const monday = new Date(`${anchor?.monday || ""}T00:00:00`);
+    const week = Number(anchor?.week);
+    if (!Number.isInteger(week) || week < 2 || Number.isNaN(monday.getTime())) continue;
+    const breakWeeks = Math.round((monday.getTime() - one.getTime()) / 604800000) - (week - 1);
+    if (breakWeeks < 0 || breakWeeks > 3) continue;
+    anchors.push({ week, monday });
+  }
+  return anchors.sort((a, b) => a.monday - b.monday);
+}
+
 export function teachingWeek(settings, now = new Date()) {
-  if (!settings?.weekOneMonday) return null;
-  const anchor = new Date(`${settings.weekOneMonday}T00:00:00`);
-  if (Number.isNaN(anchor.getTime())) return null;
-  const diff = mondayOf(now).getTime() - anchor.getTime();
-  return Math.floor(diff / 604800000) + 1;
+  const anchors = weekAnchors(settings);
+  if (!anchors.length) return null;
+  const monday = mondayOf(now).getTime();
+  const anchor = anchors.filter((item) => item.monday.getTime() <= monday).pop() || anchors[0];
+  return anchor.week + Math.round((monday - anchor.monday.getTime()) / 604800000);
 }
 
 export function attendanceDate(settings, week, day) {
   const dayOffsets = { Monday: 0, Tuesday: 1, Wednesday: 2, Thursday: 3, Friday: 4, Saturday: 5, Sunday: 6 };
-  if (!settings?.weekOneMonday || !Number.isFinite(week) || !(day in dayOffsets)) return null;
-  const date = new Date(`${settings.weekOneMonday}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  date.setDate(date.getDate() + ((week - 1) * 7) + dayOffsets[day]);
+  const anchors = weekAnchors(settings);
+  if (!anchors.length || !Number.isFinite(week) || !(day in dayOffsets)) return null;
+  const anchor = anchors.filter((item) => item.week <= week).pop() || anchors[0];
+  const date = new Date(anchor.monday.getFullYear(), anchor.monday.getMonth(), anchor.monday.getDate(), 12);
+  date.setDate(date.getDate() + ((week - anchor.week) * 7) + dayOffsets[day]);
   return dateInfo(date);
+}
+
+// Moodle prints each section as "Week 9 ... Mon 28 Sept 26 - Sun 4 Oct 26". Only a range that
+// starts on a Monday counts, so a stray date in a section summary can't become an anchor.
+export function detectWeekAnchors(text) {
+  const re = new RegExp(`\\bweek\\s*(\\d{1,2})\\b(?:(?!\\bweek\\s*\\d)[\\s\\S]){0,200}?\\bmon(?:day)?\\.?,?\\s+(\\d{1,2})\\s+(${MONTH_NAMES_RE})[a-z]*\\.?,?\\s+(\\d{4}|\\d{2})\\b`, "gi");
+  const found = new Map();
+  for (const match of String(text || "").matchAll(re)) {
+    const week = Number(match[1]);
+    const month = MONTH_ABBR.findIndex((name) => name.toLowerCase() === match[3].toLowerCase());
+    const year = match[4].length === 2 ? 2000 + Number(match[4]) : Number(match[4]);
+    const date = new Date(year, month, Number(match[2]), 12);
+    if (!week || Number.isNaN(date.getTime()) || date.getDay() !== 1 || found.has(week)) continue;
+    found.set(week, dateInfo(date).iso);
+  }
+  return [...found].map(([week, monday]) => ({ week, monday })).sort((a, b) => a.week - b.week);
+}
+
+// Keeps only anchors that change the week count (they sit after a break) and fit this
+// semester's Week 1. Returns the merged list, or null when nothing new was learned.
+export function mergeWeekAnchors(settings, detected) {
+  const current = (settings?.weekAnchors || [])
+    .filter((anchor) => weekAnchors({ weekOneMonday: settings?.weekOneMonday, weekAnchors: [anchor] }).length === 2);
+  const known = new Set(current.map((anchor) => `${anchor.week}@${anchor.monday}`));
+  const plain = { weekOneMonday: settings?.weekOneMonday };
+  const fresh = (detected || []).filter((anchor) => {
+    if (known.has(`${anchor.week}@${anchor.monday}`)) return false;
+    if (weekAnchors({ ...plain, weekAnchors: [anchor] }).length !== 2) return false;
+    return teachingWeek(plain, new Date(`${anchor.monday}T12:00:00`)) !== anchor.week;
+  });
+  if (!fresh.length) return null;
+  const byWeek = new Map([...current, ...fresh].map((anchor) => [anchor.week, anchor]));
+  return [...byWeek.values()].sort((a, b) => a.week - b.week);
 }
 
 export function normalise(value) {
@@ -180,7 +235,10 @@ export function edThreadLinks(links, targetWeeks) {
       const previous = byWeek.get(entry.week);
       if (!previous || entry.kind < previous.kind) byWeek.set(entry.week, entry);
     }
-    const selected = targets.map((week) => byWeek.get(week)).filter(Boolean);
+    // A target is a computed teaching week. If a break hasn't been learned from Moodle yet
+    // that number runs one ahead of the units' own labels, so fall back to the week before;
+    // the exact-date rule in matchCodesToAttendance still rejects codes from the wrong week.
+    const selected = targets.map((week) => byWeek.get(week) || byWeek.get(week - 1)).filter(Boolean);
     // A course can also run one general, never-week-numbered "Attendance Codes" thread
     // alongside (or instead of) weekly ones - keep the single best one of those too, the
     // same way the no-targets path below already would.

@@ -231,7 +231,7 @@ function targetWeeksForCourse(home, result, course, settings) {
   const weekOneMonday = settings?.weekOneMonday || detectWeekOneMonday(home.text);
   return weekOneMonday
     ? [...new Set(courseDates
-      .map((date) => teachingWeek({ weekOneMonday }, new Date(`${date.iso}T12:00:00`)))
+      .map((date) => teachingWeek({ ...settings, weekOneMonday }, new Date(`${date.iso}T12:00:00`)))
       .filter(Number.isFinite))]
     : inferWeekNumbersFromText(home.text, courseDates);
 }

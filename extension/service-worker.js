@@ -1,4 +1,4 @@
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek } from "./shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekAnchors, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, mergeWeekAnchors, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek } from "./shared.js";
 import { gmailSearchBounds, pickGmailBase, prioritiseGmailThreads } from "./gmail-source.js";
 import { EVIDENCE_CACHE_KEY, readAttendancePortal, reconcileAndStore } from "./reconciliation-v3.js";
 import { buildCodeEvidenceCache, mergePortalAttendance, needsCodeEvidence, projectHistoricalSessions, restoreCodeEvidence } from "./reconciliation-core.js";
@@ -478,7 +478,7 @@ async function automaticSourceScans(items, settings) {
     const courseItems = items.filter((item) => course.courses.includes(String(item.course || "").toLowerCase()));
     const edTargetWeeks = settings.weekOneMonday
       ? [...new Set(courseItems
-        .map((item) => item.attendanceDate?.iso && teachingWeek({ weekOneMonday: settings.weekOneMonday }, new Date(`${item.attendanceDate.iso}T12:00:00`)))
+        .map((item) => item.attendanceDate?.iso && teachingWeek(settings, new Date(`${item.attendanceDate.iso}T12:00:00`)))
         .filter(Number.isFinite))]
       : [];
     const selectedThreadUrls = list?.ok ? edThreadLinks(list.links, edTargetWeeks) : [];
@@ -528,10 +528,11 @@ async function automaticSourceScans(items, settings) {
   for (const course of moodleCourses.slice(0, 8)) {
     const home = await scan(course.href, { waitFor: "a[href*='section']", courses: course.courses });
     const weekOneMonday = settings.weekOneMonday || detectWeekOneMonday(home?.text || "");
+    await learnWeekAnchors(settings, weekOneMonday, home?.text);
     const courseItems = items.filter((item) => course.courses.includes(String(item.course || "").toLowerCase()));
     const courseDates = courseItems.map((item) => item.attendanceDate).filter(Boolean);
     let targetWeeks = weekOneMonday
-      ? [...new Set(courseDates.map((date) => teachingWeek({ weekOneMonday }, new Date(`${date.iso}T12:00:00`))).filter(Number.isFinite))]
+      ? [...new Set(courseDates.map((date) => teachingWeek({ ...settings, weekOneMonday }, new Date(`${date.iso}T12:00:00`))).filter(Number.isFinite))]
       : inferWeekNumbersFromText(home?.text || "", courseDates);
     if (!targetWeeks.length && weekHints.size) targetWeeks = [...weekHints];
 
@@ -552,11 +553,23 @@ async function automaticSourceScans(items, settings) {
     if (!home?.ok) continue;
     for (const week of selectedWeeks) {
       const section = await scan(weekLinks.get(week), { courses: course.courses });
+      await learnWeekAnchors(settings, weekOneMonday, section?.text);
       await logDebug(`moodle section scan week ${week} ${weekLinks.get(week)}`, { ok: section?.ok, courses: section?.courses, textExcerpt: (section?.text || "").slice(0, 1500) });
     }
   }
 
   return scans;
+}
+
+// Moodle section headers carry the real week dates, so a mid-semester break shows up there
+// before anything else. Remember it, so the next scan targets the right Ed thread straight away.
+async function learnWeekAnchors(settings, weekOneMonday, text) {
+  const merged = weekOneMonday && mergeWeekAnchors({ ...settings, weekOneMonday }, detectWeekAnchors(text));
+  if (!merged) return;
+  settings.weekAnchors = merged;
+  const stored = await loadSettings();
+  await chrome.storage.local.set({ settings: { ...stored, weekAnchors: merged } });
+  await logDebug("learned teaching-week anchors from Moodle", { weekOneMonday, weekAnchors: merged });
 }
 
 async function scanCourse(course, week) {
