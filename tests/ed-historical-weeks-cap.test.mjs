@@ -61,6 +61,6 @@ test("automaticSourceScans derives the missing teaching weeks for a course and p
     serviceWorker.indexOf("const resolvedCourses = confidentlyResolvedCourses(scans, items);")
   );
   assert.match(edSection, /const courseItems = items\.filter/, "must scope items down to this course before deriving weeks");
-  assert.match(edSection, /teachingWeek\(settings,/, "must derive teaching weeks from the full settings, so learned break anchors apply");
+  assert.match(edSection, /teachingWeekCandidates\(settings,/, "must derive teaching weeks from the full settings, so learned break anchors apply and an unsettled break keeps both week labels");
   assert.match(edSection, /edThreadLinks\(list\.links,\s*edTargetWeeks\)/, "must actually pass the derived weeks through to edThreadLinks");
 });

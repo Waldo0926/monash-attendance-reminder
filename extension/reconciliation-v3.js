@@ -334,7 +334,10 @@ function extractMoodleEvidence() {
       if (text && text.length < 700) clue = `${clue} ${text}`;
     }
     const href = url.href.split("#")[0];
-    if (/\/mod\/[^/]+\/view\.php/i.test(url.pathname) && /attendance/i.test(clue) && !seenLinks.has(`a:${href}`)) {
+    // mod/resource is an uploaded file (e.g. the "Code for International Students week 6"
+    // .docx). Opening it in a tab makes Moodle serve the file, so Chrome pops a Save dialog on
+    // every scan instead of rendering a page we could read.
+    if (/\/mod\/(?!resource\/)[^/]+\/view\.php/i.test(url.pathname) && /attendance/i.test(clue) && !seenLinks.has(`a:${href}`)) {
       seenLinks.add(`a:${href}`);
       attendanceLinks.push(href);
     }

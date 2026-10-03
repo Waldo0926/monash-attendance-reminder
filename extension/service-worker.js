@@ -1,5 +1,6 @@
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekAnchors, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, mergeWeekAnchors, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek } from "./shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekAnchors, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, mergeWeekAnchors, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek, teachingWeekCandidates } from "./shared.js";
 import { gmailSearchBounds, pickGmailBase, prioritiseGmailThreads } from "./gmail-source.js";
+import { fileLinkClues, readAttendanceDocx } from "./docx.js";
 import { EVIDENCE_CACHE_KEY, readAttendancePortal, reconcileAndStore } from "./reconciliation-v3.js";
 import { buildCodeEvidenceCache, mergePortalAttendance, needsCodeEvidence, projectHistoricalSessions, restoreCodeEvidence } from "./reconciliation-core.js";
 
@@ -155,6 +156,11 @@ async function readPage(url, { maxMs, waitFor, minMs } = {}) {
   }
 }
 
+// Moodle serves every uploaded file (pluginfile.php / mod/resource) by redirecting to a signed
+// CloudFront URL. fetch() only follows that cross-site redirect for a host the extension has
+// permission for (manifest host_permissions), otherwise it fails with a bare "Failed to fetch".
+// Opening the same link in a tab just makes Chrome save the file, so the bytes are fetched here.
+
 async function ensureOcrDocument() {
   const existing = await chrome.offscreen.hasDocument();
   if (existing) return;
@@ -205,7 +211,9 @@ async function ocrPageImages(page) {
     .map((image) => ({ image, priority: imagePriority(image, page) }))
     .filter(({ priority }) => Number.isFinite(priority) && priority > 0)
     .sort((a, b) => b.priority - a.priority)
-    .slice(0, 3)
+    // Word attachments carry the whole code table as several stacked screenshots, so every
+    // one of them is read rather than just the top three.
+    .slice(0, 3 + Math.min(8, (page.images || []).filter((image) => image.fromDocx).length))
     .map(({ image }) => image);
   if (!images.length) return page;
   try {
@@ -337,6 +345,20 @@ async function automaticSourceScans(items, settings) {
     const isCodePage = /edstem\.org\/au\/courses\/\d+\/discussion\/\d+/.test(url)
       || /learning\.monash\.edu\/course\/view\.php.*(?:[?&]section=|#section-)/.test(url)
       || /mail\.google\.com\/mail\/u\/\d+\/#all\//.test(url);
+    // Some units (ETW1001 on Moodle, BTW1042 via a forum email) post the codes as a .docx of
+    // screenshots. Read those as bytes - opening the link in a tab just makes Chrome save it.
+    if (page.ok && isCodePage && /learning\.monash\.edu|mail\.google\.com/.test(url)) {
+      const docx = await readAttendanceDocx(page.links, {
+        log: (file, note) => logDebug(`attendance docx ${file.name}`, { page: url, note })
+      });
+      if (!docx.images.length && !docx.text) {
+        const clues = fileLinkClues(page.links);
+        if (clues.length) await logDebug("attendance docx: file-like links found but none readable", { page: url, clues });
+      }
+      if (docx.images.length || docx.text) {
+        page = { ...page, text: [page.text, docx.text].filter(Boolean).join("\n"), images: [...(page.images || []), ...docx.images] };
+      }
+    }
     if (page.ok && page.images?.length && isCodePage) page = await ocrPageImages(page);
     const titleCourses = courseCodesInText(page.title || "", codes);
     const inferredCourses = courseCodesInText(page.text || "", codes);
@@ -478,7 +500,7 @@ async function automaticSourceScans(items, settings) {
     const courseItems = items.filter((item) => course.courses.includes(String(item.course || "").toLowerCase()));
     const edTargetWeeks = settings.weekOneMonday
       ? [...new Set(courseItems
-        .map((item) => item.attendanceDate?.iso && teachingWeek(settings, new Date(`${item.attendanceDate.iso}T12:00:00`)))
+        .flatMap((item) => item.attendanceDate?.iso ? teachingWeekCandidates(settings, new Date(`${item.attendanceDate.iso}T12:00:00`)) : [])
         .filter(Number.isFinite))]
       : [];
     const selectedThreadUrls = list?.ok ? edThreadLinks(list.links, edTargetWeeks) : [];
@@ -532,7 +554,7 @@ async function automaticSourceScans(items, settings) {
     const courseItems = items.filter((item) => course.courses.includes(String(item.course || "").toLowerCase()));
     const courseDates = courseItems.map((item) => item.attendanceDate).filter(Boolean);
     let targetWeeks = weekOneMonday
-      ? [...new Set(courseDates.map((date) => teachingWeek({ ...settings, weekOneMonday }, new Date(`${date.iso}T12:00:00`))).filter(Number.isFinite))]
+      ? [...new Set(courseDates.flatMap((date) => teachingWeekCandidates({ ...settings, weekOneMonday }, new Date(`${date.iso}T12:00:00`))).filter(Number.isFinite))]
       : inferWeekNumbersFromText(home?.text || "", courseDates);
     if (!targetWeeks.length && weekHints.size) targetWeeks = [...weekHints];
 

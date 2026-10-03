@@ -88,6 +88,20 @@ export function teachingWeek(settings, now = new Date()) {
   return anchor.week + Math.round((monday - anchor.monday.getTime()) / 604800000);
 }
 
+// Moodle's own header for a week (the only thing that reveals a break) is only known for the
+// weeks already opened, and it governs just the dates after it. A date still governed by the
+// Week 1 anchor therefore might sit before a break nobody has seen yet, which makes the
+// calendar-week count one too high - so both labels are candidates until a post-break anchor
+// at or before the date settles it.
+export function teachingWeekCandidates(settings, now = new Date()) {
+  const anchors = weekAnchors(settings);
+  if (!anchors.length) return [];
+  const monday = mondayOf(now).getTime();
+  const anchor = anchors.filter((item) => item.monday.getTime() <= monday).pop() || anchors[0];
+  const week = anchor.week + Math.round((monday - anchor.monday.getTime()) / 604800000);
+  return anchor.week === 1 && week > 1 ? [week, week - 1] : [week];
+}
+
 export function attendanceDate(settings, week, day) {
   const dayOffsets = { Monday: 0, Tuesday: 1, Wednesday: 2, Thursday: 3, Friday: 4, Saturday: 5, Sunday: 6 };
   const anchors = weekAnchors(settings);
@@ -416,6 +430,15 @@ export function matchCodesToAttendance(text, attendanceItems) {
   const codeRe = /\b(?=[A-Z0-9]{5}\b)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{5}\b/g;
   const standaloneMonthRe = new RegExp(`^(?:${MONTH_NAMES_RE})[a-z]*\\.?$`, "i");
   const weekdayDayRe = /\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b,?\s+\d{1,2}\b/i;
+  // OCR of a narrow date cell ("Wednesday, 30" / "Sep") often drops the first letter of the
+  // wrapped month ("ep"). Every month abbreviation minus its first letter is unique, so a
+  // lone two-letter line next to a weekday row can only be that month.
+  const clippedMonths = { an: "Jan", eb: "Feb", ar: "Mar", pr: "Apr", ay: "May", un: "Jun", ul: "Jul", ug: "Aug", ep: "Sep", ct: "Oct", ov: "Nov", ec: "Dec" };
+  const detachedMonthOf = (value) => {
+    if (!value) return "";
+    if (standaloneMonthRe.test(value)) return value.match(new RegExp(`(?:${MONTH_NAMES_RE})[a-z]*`, "i"))?.[0] || "";
+    return clippedMonths[value.replace(/\.$/, "").toLowerCase()] || "";
+  };
 
   // Ed occasionally renders a table cell such as "Wednesday, 16 Sep" as two DOM lines:
   //   Tutorial Wednesday, 16 09 2:00PM UBMP4
@@ -429,9 +452,7 @@ export function matchCodesToAttendance(text, attendanceItems) {
     if (!dateStem) return row;
 
     const neighbours = [lines[lineIndex + 1], lines[lineIndex - 1]];
-    const monthLine = neighbours.find((value) => value && standaloneMonthRe.test(value));
-    if (!monthLine) return row;
-    const month = monthLine.match(new RegExp(`(?:${MONTH_NAMES_RE})[a-z]*`, "i"))?.[0];
+    const month = neighbours.map(detachedMonthOf).find(Boolean);
     if (!month) return row;
 
     const insertAt = dateStem.index + dateStem[0].length;

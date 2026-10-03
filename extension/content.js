@@ -80,7 +80,8 @@ function moodleAttendanceLinkCandidates(links) {
     } catch {
       continue;
     }
-    if (url.origin !== location.origin || !/\/mod\//i.test(url.pathname)) continue;
+    // mod/resource is an uploaded file (docx/pdf), not a page - fetching it only yields binary.
+    if (url.origin !== location.origin || !/\/mod\//i.test(url.pathname) || /\/mod\/resource\//i.test(url.pathname)) continue;
     const clue = compactText(`${link.label || ""} ${link.context || ""}`);
     if (!/attendance/i.test(clue)) continue;
 
@@ -236,7 +237,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             if (text.length > label.length + 8) break;
           }
         }
-        return { label, context, href: link.href };
+        // Moodle's course index drawer lists every file of every week on every section page;
+        // only links in the main region belong to the week actually being read.
+        return { label, context, href: link.href, inMain: Boolean(link.closest("[role='main'], #region-main")) };
       }).filter((item) => item.label && item.href);
       const linkedMoodleAttendanceText = await fetchMoodleAttendancePages(links);
       const edDiscussionPage = location.hostname === "edstem.org" && /\/courses\/\d+\/discussion\/\d+/.test(location.pathname);
