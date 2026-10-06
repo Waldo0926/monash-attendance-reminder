@@ -20,6 +20,17 @@ test("bundles every local Tesseract asset needed by the offscreen OCR worker", a
   }
 });
 
+test("bundled Tesseract executable code has no remotely hosted code fallbacks", async () => {
+  for (const asset of [
+    "vendor/tesseract.esm.min.js",
+    "vendor/worker.min.js",
+    "vendor/tesseract-core-lstm.wasm.js"
+  ]) {
+    const source = await text(asset);
+    assert.doesNotMatch(source, /https?:\/\//i, `${asset} must not contain remote URL literals`);
+  }
+});
+
 test("disables Tesseract's blob worker so the OCR worker satisfies the MV3 CSP", async () => {
   const source = await text("ocr.js");
   assert.match(source, /workerBlobURL:\s*false/);
@@ -56,7 +67,7 @@ test("reports image content type, byte length and magic bytes when decoding fail
 
 test("manifest keeps OCR in an offscreen document with local workers and WebAssembly enabled", async () => {
   const manifest = JSON.parse(await text("manifest.json"));
-  assert.equal(manifest.version, "1.3.48");
+  assert.equal(manifest.version, "1.3.49");
   assert.ok(manifest.permissions.includes("offscreen"));
   assert.match(manifest.content_security_policy.extension_pages, /wasm-unsafe-eval/);
   assert.match(manifest.content_security_policy.extension_pages, /worker-src 'self'/);
