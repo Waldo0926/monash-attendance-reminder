@@ -7,7 +7,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> Current extension build: **v1.3.48**. Full version history: [CHANGELOG.md](CHANGELOG.md).
+> Current extension build: **v1.3.49**. Full version history: [CHANGELOG.md](CHANGELOG.md).
 
 A privacy-focused, cross-platform Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 
