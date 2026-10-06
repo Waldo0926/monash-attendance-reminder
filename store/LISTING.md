@@ -1,8 +1,8 @@
-# Chrome Web Store submission kit – v1.3.48
+# Chrome Web Store submission kit – v1.3.49
 
 Everything below is copy-paste material for the Developer Dashboard (https://chrome.google.com/webstore/devconsole). Files in this folder:
 
-- `monash-attendance-helper-1.3.48.zip` – the package to upload (built from `extension/`, `manifest.json` at the zip root). Not committed; rebuild with the command at the bottom.
+- `monash-attendance-helper-1.3.49.zip` – the package to upload (built from `extension/`, `manifest.json` at the zip root). Not committed; rebuild with the command at the bottom.
 - `screenshots/` – three 1280×800 images.
 - Privacy policy URL to paste: https://github.com/Waldo0926/monash-attendance-reminder/blob/main/PRIVACY.md
 
@@ -96,5 +96,5 @@ Then certify all three statements: not sold to third parties; not used for purpo
 ## Rebuild the package
 
 ```bash
-cd extension && rm -f ../store/monash-attendance-helper-1.3.48.zip && zip -qr ../store/monash-attendance-helper-1.3.48.zip . -x '*.DS_Store'
+cd extension && rm -f ../store/monash-attendance-helper-1.3.49.zip && zip -qr ../store/monash-attendance-helper-1.3.49.zip . -x '*.DS_Store'
 ```
