@@ -25,7 +25,9 @@ jobs:
       - name: Read extension version
         if: github.event_name == 'push'
         id: version
-        run: echo "version=$(node -p \"require('./extension/manifest.json').version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(node -e "console.log(require('./extension/manifest.json').version)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Package Chrome extension
         if: github.event_name == 'push'
