@@ -21,17 +21,17 @@ The default mode does **not** require a manually entered timetable. It reads rec
 - Keeps activities that Attendance already marks as completed and shows them as completed instead of hiding them.
 - Keeps multiple completed activities on the same date separate by course, activity, class number, and time.
 - Searches for attendance codes in this order:
-  1. **Gmail** — recent attendance-related messages.
-  2. **Ed Discussion** — recent attendance posts for courses that use Ed.
-  3. **Moodle** — the relevant unit, recent Week/section pages, and Attendance activities.
+  1. **Gmail**: recent attendance-related messages.
+  2. **Ed Discussion**: recent attendance posts for courses that use Ed.
+  3. **Moodle**: the relevant unit, recent Week/section pages, and Attendance activities.
 - Parses text-based attendance tables directly.
 - Uses bundled, local OCR for attendance tables posted as images.
 - Reads attendance codes that a unit posts as a **Word (.docx) file** on Moodle or through a forum email: the file is fetched into memory, unzipped there, and its table screenshots go through the same local OCR. Nothing is saved to disk and no download dialog appears.
 - Follows each unit's own **Week numbers across the mid-semester break**. It learns the real week dates from Moodle's section headers instead of counting calendar weeks, so "Week 9" is still found when the break makes it calendar week 10.
 - Matches codes against available course, activity type, class number, date, and time information.
 - Marks uncertain matches for manual review instead of silently guessing.
-- Qualifies every status by "this week" or "last week" — no code found this week is usually just the teacher not having posted it yet; the same gap last week means Attendance still hasn't shown it as completed and is worth checking by hand.
-- Shows a class as "not started" once it has a scheduled start time still ahead of now, even if a code was already found early — it is shown as information, never as something ready to submit.
+- Qualifies every status by "this week" or "last week". No code found this week is usually just the teacher not having posted it yet; the same gap last week means Attendance still hasn't shown it as completed and is worth checking by hand.
+- Shows a class as "not started" once it has a scheduled start time still ahead of now, even if a code was already found early. It is shown as information, never as something ready to submit.
 - Runs scanning and final reconciliation as one background step, so it no longer depends on the popup or a page staying open for the whole duration.
 - Logs key steps to persistent storage and renders that log on the confirm page, so troubleshooting does not require opening DevTools.
 - Sends Chrome reminders at configurable times.
@@ -78,7 +78,7 @@ Review page
 Student confirmation for incomplete records only
 ```
 
-Completed rows discovered through the Attendance portal are assigned a stable per-session identity so several completed activities on the same date do not collapse into one result. Final reconciliation reads a row's completed status directly from the live Attendance DOM rather than relying on anything injected into the page; a genuine `Entry.aspx` link remains a pending Attendance entry. Scanning and final reconciliation are chained inside a single background message rather than requiring the popup or the confirm page to stay open for both steps - a popup closing mid-scan used to silently skip reconciliation entirely.
+Completed rows discovered through the Attendance portal are assigned a stable per-session identity so several completed activities on the same date do not collapse into one result. Final reconciliation reads a row's completed status directly from the live Attendance DOM rather than relying on anything injected into the page; a genuine `Entry.aspx` link remains a pending Attendance entry. Scanning and final reconciliation are chained inside a single background message rather than requiring the popup or the confirm page to stay open for both steps. A popup closing mid-scan used to silently skip reconciliation entirely.
 
 ### Moodle fallback
 
@@ -92,11 +92,11 @@ The review page should show both incomplete and already-completed activities.
 
 A completed record is displayed as completed and cannot be submitted again. Every card is also labelled "this week" or "last week", making it easy to distinguish between:
 
-- **completed** — Attendance already shows it done; cannot be resubmitted.
-- **not started** — the class hasn't reached its scheduled start time yet; a code found this early is shown for information only, and the checkbox stays disabled.
-- **high confidence** — a likely-correct code, ready for the student to review and submit.
-- **needs review** — a candidate code the student must confirm by hand.
-- **not found** — this week, that's usually just a normal wait for the teacher to publish it; last week, it means Attendance still hasn't shown it as completed and is worth checking manually.
+- **completed**: Attendance already shows it done; cannot be resubmitted.
+- **not started**: the class hasn't reached its scheduled start time yet; a code found this early is shown for information only, and the checkbox stays disabled.
+- **high confidence**: a likely-correct code, ready for the student to review and submit.
+- **needs review**: a candidate code the student must confirm by hand.
+- **not found**: this week, that's usually just a normal wait for the teacher to publish it; last week, it means Attendance still hasn't shown it as completed and is worth checking manually.
 
 ## Install in Chrome (Windows / macOS / Linux)
 
@@ -137,7 +137,7 @@ Only ever submit attendance for classes you actually attended.
 
 ## Exporting this semester's history
 
-Attendance usually only accepts a backdated submission up to about a week ago, so a class forgotten earlier in the semester can't be fixed there. The "Export semester history" button at the bottom of the settings page re-runs the full discovery/matching pipeline from Week 1 through today (restoring already-cached codes first to avoid re-searching everything), and downloads the result as a CSV - useful as a record to keep, or to send a unit coordinator when asking for a manual correction. Requires Week 1's Monday to be set above, and can take a few minutes for a long semester.
+Attendance usually only accepts a backdated submission up to about a week ago, so a class forgotten earlier in the semester can't be fixed there. The "Export semester history" button at the bottom of the settings page re-runs the full discovery/matching pipeline from Week 1 through today (restoring already-cached codes first to avoid re-searching everything), and downloads the result as a CSV, useful as a record to keep, or to send a unit coordinator when asking for a manual correction. Requires Week 1's Monday to be set above, and can take a few minutes for a long semester.
 
 ## Manual timetable fallback
 
@@ -197,7 +197,7 @@ An attendance code is not proof that a student attended a class. For that reason
 - Only Word (.docx) attendance files are read; codes inside other file types, such as PDFs, are not.
 - Moodle serves uploaded files through a signed CloudFront link, so the extension asks for permission to that one host. After updating from a version older than v1.3.48, reload the extension in `chrome://extensions`.
 - Some units may publish attendance information differently from the currently supported patterns.
-- Some Monash pages can visibly render usable content while Chrome still reports a tab as `loading`; the final reconciliation reads the usable DOM directly, but a genuinely unavailable page can still fail - and gets recorded in the debug log when it does.
+- Some Monash pages can visibly render usable content while Chrome still reports a tab as `loading`; the final reconciliation reads the usable DOM directly, but a genuinely unavailable page can still fail, and gets recorded in the debug log when it does.
 - The lookback window only extends through the end of the current week; it never reads ahead into the next teaching week.
 - The project cannot guarantee compatibility with every unit or every future Monash page layout.
 
@@ -242,6 +242,6 @@ Use it in accordance with Monash attendance, academic integrity, and IT policies
 
 Fellow Monash students are welcome to use this as-is (share the repo, help a friend load it into their own Chrome), but it is not licensed for modified redistribution, and please do not fork it, strip out the manual confirmation step, or turn it into an unattended auto-submit tool.
 
-If you want to build something similar, write your own implementation and keep a real confirmation step in it - that's the academic-integrity point this project is trying to make, and the one thing that should never change.
+If you want to build something similar, write your own implementation and keep a real confirmation step in it. That's the academic-integrity point this project is trying to make, and the one thing that should never change.
 
 Use of this extension is entirely at your own risk and must follow Monash's attendance, academic-integrity, and IT policies.
