@@ -7,7 +7,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> Current extension build: **v1.3.49**. Full version history: [CHANGELOG.md](CHANGELOG.md).
+> Current extension build: **v1.3.50**. Full version history: [CHANGELOG.md](CHANGELOG.md).
 
 A privacy-focused, cross-platform Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 
@@ -193,7 +193,7 @@ An attendance code is not proof that a student attended a class. For that reason
 - Each Chrome profile must be configured separately.
 - Gmail, Moodle, Ed, and Monash Attendance may change their page structures over time.
 - Expired login sessions still require the student to sign in again.
-- OCR can make mistakes, so image-derived results should be checked when marked for review.
+- OCR can make mistakes, so image-derived results should be checked when marked for review. Each code cell is read several times (with and without a letter whitelist, at a few image sizes); when those readings disagree, the code is shown as needs review together with the other spellings, for example `W47VD / W4ZVD`, instead of as high confidence.
 - Only Word (.docx) attendance files are read; codes inside other file types, such as PDFs, are not.
 - Moodle serves uploaded files through a signed CloudFront link, so the extension asks for permission to that one host. After updating from a version older than v1.3.48, reload the extension in `chrome://extensions`.
 - Some units may publish attendance information differently from the currently supported patterns.

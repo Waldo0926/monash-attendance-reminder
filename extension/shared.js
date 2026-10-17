@@ -581,12 +581,16 @@ export function matchCodesToAttendance(text, attendanceItems) {
       if (numberConflict) score -= 80;
       else if (hasNumber) score += 8;
       if (hasDate && hasTime && hasNumber) score += 12;
-      return { ...hit, score, numberConflict, dateConflict, dateMissing, numberVerified: !sessionNumber || hasNumber };
+      // A real code row names the class type or its time. Without either, the token is just a
+      // five character word near a course code and a date, like the FIT3162 team name MCS21 in
+      // an email that also mentioned "Thursday 15 October" and so passed as Studio 01's code.
+      const notARow = Boolean(lineDateRe && (sessionType || itemTime) && !hasType && !hasTime);
+      return { ...hit, score, numberConflict, dateConflict, dateMissing, notARow, numberVerified: !sessionNumber || hasNumber };
     });
     // Auto-discovered Attendance rows always carry an exact calendar date. A Gmail/Ed/Moodle
     // candidate that lost that date cannot safely be distinguished from another week's class
     // at the same weekday/time, so refuse it instead of guessing from a broader search window.
-    return ranked.filter((hit) => !hit.numberConflict && !hit.dateConflict && !hit.dateMissing && hit.score >= 24);
+    return ranked.filter((hit) => !hit.numberConflict && !hit.dateConflict && !hit.dateMissing && !hit.notARow && hit.score >= 24);
   });
 
   const claims = candidates
@@ -608,6 +612,23 @@ export function matchCodesToAttendance(text, attendanceItems) {
       code: best ? best.code : "",
       confidence: best ? (best.score >= 36 && best.numberVerified ? "high" : "review") : "missing",
       context: best ? best.context.slice(0, 520) : ""
+    };
+  });
+}
+
+// ocr.js reports codes that different OCR passes spelled differently (W47VD and W4ZVD for
+// the same cell). Whichever spelling matched, it is only a guess, so it drops to "review"
+// and the other spellings go into the context for the student to check against the image.
+export function flagOcrDoubts(items, doubts) {
+  return (items || []).map((item) => {
+    if (!item?.code) return item;
+    const group = (doubts || []).find((codes) => codes.includes(item.code));
+    if (!group) return item;
+    const others = group.filter((code) => code !== item.code);
+    return {
+      ...item,
+      confidence: item.confidence === "high" ? "review" : item.confidence,
+      context: `OCR 读法不一致：${[item.code, ...others].join(" / ")}，请打开来源对照原图。${item.context ? ` ${item.context}` : ""}`.slice(0, 620)
     };
   });
 }

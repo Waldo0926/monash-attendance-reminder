@@ -1,4 +1,4 @@
-import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekAnchors, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, mergeWeekAnchors, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek, teachingWeekCandidates } from "./shared.js";
+import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekAnchors, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, flagOcrDoubts, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, mergeWeekAnchors, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek, teachingWeekCandidates } from "./shared.js";
 import { gmailSearchBounds, pickGmailBase, prioritiseGmailThreads } from "./gmail-source.js";
 import { fileLinkClues, readAttendanceDocx } from "./docx.js";
 import { EVIDENCE_CACHE_KEY, readAttendancePortal, reconcileAndStore } from "./reconciliation-v3.js";
@@ -85,7 +85,7 @@ function mergeSourceScanCodes(items, sourceScans) {
     if (!scan.ok) continue;
     const scoped = safeScopedAttendanceItems(result, scan);
     if (!scoped.length) continue;
-    const matched = matchCodesToAttendance(scan.text, scoped.map(({ item }) => item));
+    const matched = flagOcrDoubts(matchCodesToAttendance(scan.text, scoped.map(({ item }) => item)), scan.ocrDoubts);
     const replacements = new Map();
     matched.forEach((candidate, scopedIndex) => {
       const index = scoped[scopedIndex].index;
@@ -227,11 +227,13 @@ async function ocrPageImages(page) {
     return {
       ...page,
       ocrText,
+      ocrDoubts: results.flatMap((result) => result.uncertain || []),
       ocrSelectedCount: images.length,
       ocrDetails: results.map((result, index) => ({
         index: index + 1,
         src: result.src || images[index]?.src || "",
         text: result.text || "",
+        uncertain: result.uncertain || [],
         passes: result.passes || [],
         error: result.error || "",
         width: images[index]?.width || 0,
@@ -296,7 +298,7 @@ function confidentlyResolvedCourses(scans, items) {
     if (!page?.ok || !page.text) continue;
     const scoped = safeScopedAttendanceItems(best, page);
     if (!scoped.length) continue;
-    const matched = matchCodesToAttendance(page.text, scoped.map(({ item }) => item));
+    const matched = flagOcrDoubts(matchCodesToAttendance(page.text, scoped.map(({ item }) => item)), page.ocrDoubts);
     matched.forEach((candidate, scopedIndex) => {
       const index = scoped[scopedIndex].index;
       if (candidate.code && confidenceRank(candidate.confidence) > confidenceRank(best[index].confidence)) {
@@ -653,6 +655,7 @@ async function scanAll(reason = "manual") {
         index: detail.index,
         src: detail.src,
         text: String(detail.text || "").slice(0, 6000),
+        uncertain: (detail.uncertain || []).slice(0, 20),
         passes: (detail.passes || []).slice(0, 12).map((pass) => ({
           label: String(pass.label || "").slice(0, 80),
           text: String(pass.text || "").slice(0, 2200)

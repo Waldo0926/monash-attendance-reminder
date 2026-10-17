@@ -7,7 +7,7 @@
 
 [English](README.md) | **简体中文**
 
-> 当前扩展版本：**v1.3.49**。完整版本记录见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
+> 当前扩展版本：**v1.3.50**。完整版本记录见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
 
 一个注重隐私、**跨平台**的 Chrome 扩展，帮助 Monash 学生自动发现近期需要处理的考勤活动，从 Gmail、Ed Discussion 和 Moodle 中寻找对应的 Attendance Code，在提交前集中核对，并且只会在学生明确确认后才提交。
 
@@ -195,7 +195,7 @@ Attendance Code 本身不能证明学生真实参加了课程，因此项目刻�
 - 每个 Chrome Profile 都需要单独配置。
 - Gmail、Moodle、Ed 和 Monash Attendance 的页面结构以后都可能变化。
 - 如果登录状态已经过期，仍然需要学生重新登录。
-- OCR 可能识别错误，因此被标记为需要核对的图片结果应人工确认。
+- OCR 可能识别错误，因此被标记为需要核对的图片结果应人工确认。每个签到码格子会被读好几遍（带和不带字母白名单，几种不同的图片尺寸），几遍读出来不一样时，这个码会显示为“请核对”并列出其他读法，比如 `W47VD / W4ZVD`，而不是标成高可信。
 - 目前只读取 Word（.docx）形式的签到文件；其他文件类型（例如 PDF）里的签到码不会被读取。
 - Moodle 通过 CloudFront 的带签名链接提供上传的文件，所以扩展会申请这一个域名的访问权限。从早于 v1.3.48 的版本更新后，请在 `chrome://extensions` 里重新加载扩展。
 - 不同课程可能使用完全不同的签到码发布方式。

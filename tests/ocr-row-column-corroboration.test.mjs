@@ -14,7 +14,7 @@ const read = (path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)
 // than a hand-copied re-implementation that could quietly drift from it.
 function loadPureHelpers() {
   const source = read("../extension/ocr.js");
-  const names = ["fiveCharCodes", "plausibleCode", "codeSequence", "sessionRows", "pairRowsWithCodeColumn"];
+  const names = ["fiveCharCodes", "plausibleCode", "codeSequence", "sessionRows", "hamming", "oneEditApart", "pairRowsWithCodeColumn"];
   const bodies = names.map((name) => {
     const start = source.indexOf(`function ${name}(`);
     assert.ok(start >= 0, `${name} must still exist in ocr.js`);
