@@ -7,7 +7,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> Current extension build: **v1.3.50**. Full version history: [CHANGELOG.md](CHANGELOG.md).
+> Current extension build: **v1.3.51**. Full version history: [CHANGELOG.md](CHANGELOG.md).
 
 A privacy-focused, cross-platform Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 
@@ -126,7 +126,7 @@ Once set up, click the extension icon any time you want to check for new codes.
 
 ![Confirm page listing classes with their codes, status, and the attendance declaration checkbox](docs/screenshots/confirm-page.png)
 
-4. Tick the classes you actually attended, tick the attendance declaration checkbox at the bottom, and click **Confirm and submit selected records**. The extension fills in the code and submits it to Monash Attendance for you.
+4. Tick the classes you actually attended, tick the attendance declaration checkbox at the bottom, and click **Confirm and submit selected records**. The extension fills in the code, submits it to Monash Attendance, then reopens that day in Attendance to check the class really shows as done. Each class gets its own line saying whether it went through; anything that didn't is left for you to enter by hand.
 5. A reminder notification opens the same confirm page directly at the time(s) you configured, so you don't have to remember to check it yourself.
 
 If your attendance percentage looks low and you suspect an earlier class was never submitted, open the extension's **Settings** page and use **Export semester history** under "This semester's history". It rescans every class from Week 1 through today, tries to find a code for each one, and downloads the result as a spreadsheet you can keep or send to your unit coordinator.
