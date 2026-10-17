@@ -79,6 +79,75 @@ function codeSequence(text) {
   return values;
 }
 
+// Lato (the font in the FIT2109 and FIT2102 code tables) has a capital Z that Tesseract
+// often reads as a lowercase z. Week 11's GU2ZP came back as "GU2zP", and the matcher only
+// accepts upper case codes, so the row was dropped even though every other cell was fine.
+// Codes are always upper case, so a five character token that has a digit or at least two
+// capitals is folded to upper case. Ordinary words like "Codes" or "Thurs" are left alone,
+// and so is a token glued to a non-ASCII glyph such as the garbled "CcQlTé" from the Aug 18
+// strip, which is noise rather than a code.
+function upperCaseCodeTokens(text) {
+  return String(text || "").replace(/(?<![^\s|,;:()])[A-Za-z0-9]{5}(?![^\s|,;:().])/g, (token) => {
+    if (token === token.toUpperCase()) return token;
+    const looksLikeCode = /\d/.test(token) || (token.match(/[A-Z]/g) || []).length >= 2;
+    if (!looksLikeCode || /^(?:week|wk|room|lab|level)\d+$/i.test(token)) return token;
+    const upper = token.toUpperCase();
+    return plausibleCode(upper) ? upper : token;
+  });
+}
+
+function hamming(a, b) {
+  if (a.length !== b.length) return Infinity;
+  let diff = 0;
+  for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) diff += 1;
+  return diff;
+}
+
+// True when one extra, missing or changed character turns a into b.
+function oneEditApart(a, b) {
+  if (a === b) return false;
+  if (a.length === b.length) return hamming(a, b) === 1;
+  if (Math.abs(a.length - b.length) !== 1) return false;
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  for (let index = 0; index < long.length; index += 1) {
+    if (long.slice(0, index) + long.slice(index + 1) === short) return true;
+  }
+  return false;
+}
+
+// A code column pass that returns "JTLT" or "W4272VD" did not read a clean code, but that is
+// still a sign the cell is hard to read. Keep those near misses (4 to 6 characters) as votes.
+function looseCodeTokens(text) {
+  return (String(text || "").toUpperCase().match(/\b[A-Z0-9]{4,6}\b/g) || [])
+    .filter((token) => token.length !== 5 && /[A-Z]/.test(token) && !/^\d{3,4}[AP]M$/.test(token));
+}
+
+// Two different real codes in one table almost never sit one character apart, so readings
+// that do are the same cell read differently by different passes (W4ZVD came back as W47VD
+// at one size and W4zVD at another). Group them and keep every group that has more than one
+// spelling, clean five character codes first and most voted first, so the matcher can mark
+// that code for a manual check instead of calling it high confidence.
+function conflictingReadings(readings) {
+  const votes = new Map();
+  for (const code of readings) votes.set(code, (votes.get(code) || 0) + 1);
+  const codes = [...votes.keys()];
+  const groupOf = new Map(codes.map((code) => [code, code]));
+  const root = (code) => (groupOf.get(code) === code ? code : root(groupOf.get(code)));
+  codes.forEach((a, i) => codes.slice(i + 1).forEach((b) => {
+    if (oneEditApart(a, b)) groupOf.set(root(b), root(a));
+  }));
+  const groups = new Map();
+  for (const code of codes) {
+    const key = root(code);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(code);
+  }
+  const clean = (code) => (plausibleCode(code) ? 1 : 0);
+  return [...groups.values()]
+    .filter((group) => group.length > 1 && group.some(plausibleCode))
+    .map((group) => group.sort((a, b) => clean(b) - clean(a) || votes.get(b) - votes.get(a)));
+}
+
 function bestCodeSequence(...texts) {
   return texts.map(codeSequence).sort((a, b) => b.length - a.length)[0] || [];
 }
@@ -136,7 +205,11 @@ function pairRowsWithCodeColumn(rowText, codes) {
   rows.forEach((row, rowIndex) => {
     const ownCodes = fiveCharCodes(row).filter(plausibleCode);
     if (ownCodes.some((code) => codes.includes(code))) return;
+    // A row whose own reading is one character away from the crop's is the same cell read
+    // two ways (GU2ZP vs GU27P). Stitching the crop reading on would add a second, competing
+    // code for the row; the disagreement is reported through conflictingReadings instead.
     const code = codes[rowIndex + offset];
+    if (code && ownCodes.some((own) => oneEditApart(own, code))) return;
     if (code) stitched.push(`${row} ${code}`);
   });
   return stitched;
@@ -172,6 +245,7 @@ async function recognise(image) {
   const passes = [];
   const generalTexts = [];
   const syntheticRows = [];
+  const readings = [];
 
   const runPass = async (blobToRead, mode, label, { whitelist = "", collect = true } = {}) => {
     if (!blobToRead) return "";
@@ -182,8 +256,11 @@ async function recognise(image) {
       tessedit_char_whitelist: whitelist
     });
     const result = await worker.recognize(blobToRead);
-    const value = (result?.data?.text || "").trim();
-    passes.push({ label, text: value });
+    const raw = (result?.data?.text || "").trim();
+    const value = upperCaseCodeTokens(raw);
+    passes.push({ label, text: raw });
+    readings.push(...codeSequence(value));
+    if (/code/.test(label)) readings.push(...looseCodeTokens(value));
     if (collect && value) generalTexts.push(value);
     return value;
   };
@@ -221,6 +298,10 @@ async function recognise(image) {
     const combinedCodes = [...new Set([...blockCodes, ...lineCodes])];
     const codeNormal = await runPass(normalized.codeBlob, PSM.SPARSE_TEXT, "wide-code-zone", { whitelist: CODE_WHITELIST, collect: false });
     const codeBinary = await runPass(normalized.codeThresholdBlob, PSM.SPARSE_TEXT, "wide-code-zone-threshold", { whitelist: CODE_WHITELIST, collect: false });
+    // The whitelist has no lowercase letters, so a Z that Tesseract sees as "z" gets forced
+    // into a 7 or a 2 (W4ZVD became W47VD). One unwhitelisted read of the same crop is only
+    // used as a second opinion for conflictingReadings, never stitched onto a row.
+    await runPass(normalized.codeBlob, PSM.SPARSE_TEXT, "wide-code-zone-plain", { collect: false });
     const imageCodes = bestCodeSequence(codeNormal, codeBinary);
     if (imageCodes.length) {
       syntheticRows.push(...pairRowsWithCodeColumn(block || line, imageCodes));
@@ -256,6 +337,7 @@ async function recognise(image) {
     if (normalized.width / Math.max(1, normalized.height) >= 2.2) {
       const codeNormal = await runPass(normalized.codeBlob, PSM.SPARSE_TEXT, "code-zone", { whitelist: CODE_WHITELIST, collect: false });
       const codeBinary = await runPass(normalized.codeThresholdBlob, PSM.SPARSE_TEXT, "code-zone-threshold", { whitelist: CODE_WHITELIST, collect: false });
+      await runPass(normalized.codeBlob, PSM.SPARSE_TEXT, "code-zone-plain", { collect: false });
       const imageCodes = bestCodeSequence(codeNormal, codeBinary);
       const hasNewCode = imageCodes.some((code) => !codes.includes(code));
       if (hasNewCode) {
@@ -276,12 +358,20 @@ async function recognise(image) {
     }
   }
 
+  // Extra votes for conflictingReadings only. Each size is read with and without the
+  // whitelist, and none of these readings are stitched onto rows or added to the text.
+  for (const [index, voteBlob] of (normalized.codeVoteBlobs || []).entries()) {
+    await runPass(voteBlob, PSM.SPARSE_TEXT, `code-vote-${index + 1}`, { collect: false });
+    await runPass(voteBlob, PSM.SPARSE_TEXT, `code-vote-${index + 1}-whitelist`, { whitelist: CODE_WHITELIST, collect: false });
+  }
+
   // Nearby Ed text is useful only as context for an image code already found above; it
   // should never inject unrelated tokens into the OCR result on its own.
   const text = [...new Set([...syntheticRows, ...generalTexts].map((value) => value.trim()).filter(Boolean))].join("\n");
   return {
     src: image.src,
     text,
+    uncertain: conflictingReadings(readings),
     passes,
     imageType: normalized.originalType,
     normalizedType: normalized.blob.type,

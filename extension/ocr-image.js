@@ -69,6 +69,35 @@ async function rightCodeCrop(sourceCanvas, ratio = 0.30) {
   };
 }
 
+// How well Tesseract reads a code depends a lot on the glyph size. On the real FIT2102 and
+// FIT2109 tables one scale read W4ZVD right and another read W47VD, and no single scale got
+// every code. Reading the code column at a few sizes gives ocr.js several independent votes,
+// so a cell that the passes disagree on can be flagged instead of trusted.
+const CODE_VOTE_SCALES = [1.5, 2, 2.5];
+
+async function codeColumnAtScales(source, width, height) {
+  if (width / Math.max(1, height) < 2.2) return [];
+  const cropX = Math.round(width * 0.78);
+  const cropWidth = width - cropX;
+  const blobs = [];
+  for (const scale of CODE_VOTE_SCALES) {
+    const pad = 20;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(cropWidth * scale) + pad * 2;
+    canvas.height = Math.round(height * scale) + pad * 2;
+    if (canvas.width > 2400 || canvas.height > 4000) continue;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) continue;
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.imageSmoothingQuality = "high";
+    if ("filter" in context) context.filter = "grayscale(1) contrast(1.35)";
+    context.drawImage(source, cropX, 0, cropWidth, height, pad, pad, Math.round(cropWidth * scale), Math.round(height * scale));
+    blobs.push(await canvasToBlob(canvas, "image/png"));
+  }
+  return blobs;
+}
+
 export async function normaliseImageBlob(blob) {
   if (!(blob instanceof Blob) || !blob.size) throw new Error("Image response was empty");
 
@@ -219,8 +248,11 @@ export async function normaliseImageBlob(blob) {
       }
     }
 
+    const codeVoteBlobs = await codeColumnAtScales(source, width, height).catch(() => []);
+
     return {
       blob: png,
+      codeVoteBlobs,
       topBlob,
       codeBlob: codeZone.normal,
       codeThresholdBlob: codeZone.threshold,
