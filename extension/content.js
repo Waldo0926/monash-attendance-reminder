@@ -188,10 +188,29 @@ function findAttendanceInput() {
   return inputs.find((input) => /attendance|code/i.test(`${input.placeholder} ${input.name} ${input.id}`)) || inputs[0];
 }
 
+// Attendance is an ASP.NET page, so the whole page is one <form> and "inside the form" also
+// covers the header and footer links. Real buttons come first; a link only counts when it is
+// a postback (javascript:) or in-page (#) link, never one that navigates somewhere else.
 function findSubmitButton(input) {
   const form = input.closest("form");
-  const candidates = [...(form || document).querySelectorAll("button,input[type=submit],input[type=button],a")];
-  return candidates.find((node) => /submit|enter|confirm|record|签到|提交/i.test(`${node.innerText || ""} ${node.value || ""} ${node.title || ""}`));
+  const label = (node) => `${node.innerText || ""} ${node.value || ""} ${node.title || ""} ${node.getAttribute?.("aria-label") || ""}`;
+  const wanted = /submit|enter|confirm|record|save|签到|提交/i;
+  const usable = (node) => !node.disabled && (node.offsetWidth > 0 || node.offsetHeight > 0 || node.getClientRects().length > 0);
+  const buttons = [...(form || document).querySelectorAll("button,input[type=submit],input[type=button],input[type=image]")]
+    .filter((node) => usable(node) && !/logout|log out|cancel|back|home/i.test(label(node)));
+  const named = buttons.find((node) => wanted.test(label(node)));
+  if (named) return named;
+  const submits = buttons.filter((node) => node.type === "submit" || node.type === "image");
+  if (submits.length === 1) return submits[0];
+  const links = [...(form || document).querySelectorAll("a")].filter((node) => {
+    const href = (node.getAttribute("href") || "").trim();
+    return usable(node) && (/^javascript:/i.test(href) || href.startsWith("#")) && !/logout|log out|cancel|back|home/i.test(label(node));
+  });
+  return links.find((node) => wanted.test(label(node))) || null;
+}
+
+function describeNode(node) {
+  return `${node.tagName.toLowerCase()}${node.type ? `[${node.type}]` : ""} "${String(node.innerText || node.value || node.title || "").trim().slice(0, 40)}"`;
 }
 
 function snapshotImageAsPng(image) {
@@ -327,20 +346,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "FILL_ATTENDANCE_CODE") {
-    const input = findAttendanceInput();
-    if (!input) {
-      sendResponse({ ok: false, error: "找不到签到码输入框" });
-      return;
-    }
-    input.focus();
-    setNativeValue(input, message.code);
-    const button = findSubmitButton(input);
-    if (!button) {
-      sendResponse({ ok: false, error: "已填入代码，但找不到提交按钮", filled: true });
-      return;
-    }
-    if (message.commit === true) button.click();
-    sendResponse({ ok: true, filled: true, submitted: message.commit === true });
-    return;
+    (async () => {
+      let input = findAttendanceInput();
+      if (!input) {
+        await waitForStablePage({ waitFor: "input[type=text],input:not([type]),input[type=tel]" });
+        input = findAttendanceInput();
+      }
+      if (!input) {
+        sendResponse({ ok: false, error: "找不到签到码输入框" });
+        return;
+      }
+      input.focus();
+      setNativeValue(input, message.code);
+      const button = findSubmitButton(input);
+      if (!button) {
+        sendResponse({ ok: false, error: "已填入代码，但找不到提交按钮", filled: true });
+        return;
+      }
+      // Answer before clicking: a full postback unloads this script and the reply would be lost.
+      sendResponse({ ok: true, filled: true, submitted: message.commit === true, button: describeNode(button) });
+      if (message.commit === true) setTimeout(() => button.click(), 50);
+    })();
+    return true;
   }
 });

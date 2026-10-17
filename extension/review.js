@@ -205,8 +205,26 @@ submit.addEventListener("click", async () => {
   submit.disabled = true;
   document.querySelector("#submitStatus").textContent = `正在提交 ${items.length} 条，请不要关闭新打开的 Attendance 标签页…`;
   const response = await chrome.runtime.sendMessage({ type: "SUBMIT_CODES", items });
-  const successes = response.outcomes?.filter((item) => item.ok).length || 0;
-  document.querySelector("#submitStatus").textContent = `已处理 ${successes}/${items.length} 条。请在 Attendance 页面核对成功提示和最终出勤率。`;
+  const outcomes = response?.outcomes || [];
+  const verified = outcomes.filter((outcome) => outcome.ok && outcome.verified);
+  // "Done" only when Attendance itself shows the tick, each record gets its own line so a
+  // failure can't hide behind a total.
+  const lines = items.map((item) => {
+    const outcome = outcomes.find((entry) => entry.id === item.id);
+    const good = outcome?.ok && outcome?.verified;
+    const detail = good ? (outcome.message || "Attendance 已显示签到") : (outcome?.error || response?.error || "没有收到结果");
+    return `<li class="${good ? "" : "danger-note"}">${good ? "✓" : "✗"} ${escapeHtml(`${item.course} ${item.session} ${item.code}`)}：${escapeHtml(detail)}</li>`;
+  });
+  document.querySelector("#submitStatus").innerHTML = `Attendance 核对后已签上 ${verified.length}/${items.length} 条。${verified.length < items.length ? "没签上的请在 Attendance 页面手动输入。" : ""}<ul>${lines.join("")}</ul>`;
+  if (verified.length) {
+    const ids = new Set(verified.map((outcome) => outcome.id));
+    const { latestScan: current } = await chrome.storage.local.get("latestScan");
+    if (current?.items) {
+      current.items = current.items.map((item) => ids.has(item.id) ? { ...item, completed: true } : item);
+      await chrome.storage.local.set({ latestScan: current });
+    }
+  }
+  updateSubmit();
 });
 
 document.querySelector("#clearDebugLog").addEventListener("click", async () => {

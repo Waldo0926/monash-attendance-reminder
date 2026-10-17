@@ -1,7 +1,7 @@
 import { ATTENDANCE_URL, DEFAULT_SETTINGS, attendanceDate, courseCodesInText, detectWeekAnchors, detectWeekOneMonday, edThreadLinks, extractCandidates, findCourseLinks, flagOcrDoubts, hasUsableConfig, inferWeekNumbersFromText, loadSettings, logDebug, matchCodesToAttendance, mergeWeekAnchors, moodleWeekLinks, parseDateKey, pickWeekNumbers, recentAttendanceDates, scopedAttendanceItems, teachingWeek, teachingWeekCandidates } from "./shared.js";
 import { gmailSearchBounds, pickGmailBase, prioritiseGmailThreads } from "./gmail-source.js";
 import { fileLinkClues, readAttendanceDocx } from "./docx.js";
-import { EVIDENCE_CACHE_KEY, readAttendancePortal, reconcileAndStore } from "./reconciliation-v3.js";
+import { EVIDENCE_CACHE_KEY, checkAttendanceSession, readAttendancePortal, reconcileAndStore } from "./reconciliation-v3.js";
 import { buildCodeEvidenceCache, mergePortalAttendance, needsCodeEvidence, projectHistoricalSessions, restoreCodeEvidence } from "./reconciliation-core.js";
 
 const PRIMARY_ALARM = "attendance-primary";
@@ -809,7 +809,7 @@ async function buildSemesterHistory(settings) {
   };
 }
 
-async function submitOne(item, settings) {
+async function clickSubmit(item, settings) {
   if (item.entryUrl) {
     const tab = await chrome.tabs.create({ url: item.entryUrl, active: true });
     await waitForLoaded(tab.id);
@@ -833,7 +833,7 @@ async function submitOne(item, settings) {
     session: item.session,
     attendanceLabel: item.attendanceLabel
   });
-  if (!session.ok) return { ...session, tabId: tab.id };
+  if (!session?.ok) return { ok: false, error: session?.error || "Attendance 页面没有回应", tabId: tab.id };
   await chrome.tabs.update(tab.id, { url: session.href });
   await waitForLoaded(tab.id);
   const outcome = await chrome.tabs.sendMessage(tab.id, {
@@ -842,6 +842,40 @@ async function submitOne(item, settings) {
     commit: true
   });
   return { ...outcome, tabId: tab.id };
+}
+
+// What the portal says right after the click, e.g. an "invalid code" line. Only used to
+// explain a failed check, so any error here just means there is nothing to show.
+async function pageMessage(tabId) {
+  try {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => String(document.body?.innerText || "").replace(/\s+/g, " ").trim().slice(0, 300)
+    });
+    return result?.result || "";
+  } catch {
+    return "";
+  }
+}
+
+async function submitOne(item, settings) {
+  const clicked = await clickSubmit(item, settings);
+  if (!clicked?.ok) return { ...clicked, ok: false, error: clicked?.error || "没有点到提交按钮" };
+  // Give the postback time to finish before reading anything back.
+  await pause(2500);
+  if (clicked.tabId) await waitForLoaded(clicked.tabId, 15000).catch(() => {});
+  const shown = clicked.tabId ? await pageMessage(clicked.tabId) : "";
+  const check = await checkAttendanceSession({ ...item, attendanceDate: item.attendanceDate || attendanceDate(settings, item.week, item.day) });
+  await logDebug("submit result", { id: item.id, course: item.course, session: item.session, button: clicked.button, check, shown });
+  if (check.checked && check.completed) {
+    return { ok: true, verified: true, tabId: clicked.tabId, message: "Attendance 已显示签到" };
+  }
+  const reason = !check.checked
+    ? `已点击提交，但没能回 Attendance 核对（${check.error || "未知原因"}），请手动确认。`
+    : !check.found
+      ? "已点击提交，但 Attendance 那天找不到这节课，请手动确认。"
+      : "已点击提交，但 Attendance 仍显示未签到。";
+  return { ok: false, verified: false, tabId: clicked.tabId, error: shown ? `${reason} 页面显示：${shown}` : reason };
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -889,11 +923,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     (async () => {
       const settings = await loadSettings();
       const { lastSubmission } = await chrome.storage.local.get("lastSubmission");
-      const completed = new Set((lastSubmission?.outcomes || []).filter((item) => item.ok).map((item) => item.id));
+      // Only skip records Attendance itself confirmed. Older versions saved ok: true for a
+      // plain button click, and those must not block a retry.
+      const completed = new Set((lastSubmission?.outcomes || []).filter((item) => item.ok && item.verified).map((item) => item.id));
       const outcomes = [];
       for (const item of message.items) {
         if (completed.has(item.id)) {
-          outcomes.push({ id: item.id, code: item.code, ok: true, skipped: true, message: "本机已记录为提交成功，已跳过去重" });
+          outcomes.push({ id: item.id, code: item.code, ok: true, verified: true, skipped: true, message: "之前已核对签到成功，这次跳过" });
           continue;
         }
         try {

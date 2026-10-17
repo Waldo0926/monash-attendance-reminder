@@ -88,8 +88,8 @@ async function waitForUsableDocument(tabId, targetUrl, timeoutMs = 12000) {
   return false;
 }
 
-async function runOnPage(url, func, args = [], attempts = 3) {
-  const tabs = await chrome.tabs.query({});
+async function runOnPage(url, func, args = [], attempts = 3, { reuse = true } = {}) {
+  const tabs = reuse ? await chrome.tabs.query({}) : [];
   const exact = tabs.find((tab) => tab.url === url);
   const tab = exact || await chrome.tabs.create({ url, active: false });
   const owned = !exact;
@@ -282,6 +282,32 @@ export async function readAttendancePortal(lookbackDays) {
     } : { ok: false, url, error: page.error, reconciliation: "attendance-v4" });
   }
   return { sessions, scans };
+}
+
+const sessionKey = (value) => String(value || "").toLowerCase().replace(/\s+/g, " ").replace(/\b0+(\d+)\b/g, "$1").trim();
+
+// After a submit the only thing that counts is what Attendance itself shows for that row.
+// A clicked button proves nothing: v1.3.50 reported "已处理 2/2" while FIT3162 Studio 01 still
+// had the question mark. Always open a fresh tab here, an old Units.aspx tab with the same
+// hash would still show the state from before the submit.
+export async function checkAttendanceSession(item) {
+  const key = item?.attendanceDate?.key;
+  if (!key) return { checked: false, error: "没有签到日期，无法回 Attendance 核对" };
+  const url = `https://attendance.monash.edu.my/student/Units.aspx#${key}`;
+  const page = await withTimeout(runOnPage(url, extractAttendanceRows, [key], 3, { reuse: false }), 55000, "核对页面超时")
+    .catch((error) => ({ ok: false, error: error.message }));
+  if (!page.ok) return { checked: false, error: page.error };
+  const rows = page.value?.sessions || [];
+  const row = rows.find((candidate) => candidate.course === String(item.course || "").toUpperCase()
+    && sessionKey(candidate.session) === sessionKey(item.session));
+  await logDebug(`submit check ${key}`, {
+    course: item.course,
+    session: item.session,
+    found: Boolean(row),
+    completed: Boolean(row?.completed),
+    rows: rows.map((candidate) => `${candidate.completed ? "✓" : "○"} ${candidate.course} ${candidate.session} ${candidate.time}`)
+  });
+  return { checked: true, found: Boolean(row), completed: Boolean(row?.completed) };
 }
 
 function extractMoodleEvidence() {
