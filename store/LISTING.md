@@ -1,8 +1,8 @@
-# Chrome Web Store submission kit – v1.3.51
+# Chrome Web Store submission kit – v1.3.52
 
 Everything below is copy-paste material for the Developer Dashboard (https://chrome.google.com/webstore/devconsole). Files in this folder:
 
-- `monash-attendance-helper-1.3.51.zip` – the package to upload (built from `extension/`, `manifest.json` at the zip root). Not committed; rebuild with the command at the bottom.
+- `monash-attendance-helper-1.3.52.zip` – the package to upload. Not committed; build it with `bash scripts/build-store-zip.sh` (see the bottom).
 - `screenshots/` – three 1280×800 images.
 - Privacy policy URL to paste: https://github.com/Waldo0926/monash-attendance-reminder/blob/main/PRIVACY.md
 
@@ -61,7 +61,6 @@ Monash Attendance Helper 是给莫纳什大学马来西亚校区学生用的非�
 
 | Permission | Justification |
 | --- | --- |
-| `tabs` | Opens the user's Attendance, Moodle, Ed and Gmail pages in background tabs to read them, and reuses a tab that is already open instead of duplicating it. |
 | `scripting` | Injects the page reader into an already-open tab after the extension is reloaded or updated, when the automatic content script is not present yet. |
 | `storage` | Keeps settings, the latest scan result and a diagnostic log locally on the device. |
 | `alarms` | Schedules the weekly reminder and the backup check. |
@@ -75,7 +74,20 @@ Monash Attendance Helper 是给莫纳什大学马来西亚校区学生用的非�
 | `https://d25zr1xy094zys.cloudfront.net/*` | Moodle serves uploaded files (such as an attendance-code .docx) through a signed link on this host; fetch fails without access to it. |
 | `wasm-unsafe-eval` (CSP) | Required to run the Tesseract WebAssembly OCR engine that is bundled in the package. |
 
-**Remote code**: No. All JavaScript and WebAssembly is in the package. (The vendored Tesseract files contain default CDN URL strings from the library; the extension overrides every path to local files in `ocr.js`, so they are never used.)
+**Remote code**: No, I am not using remote code. All JavaScript and WebAssembly is in the package. Tesseract loads its worker, core and English data from the package through `chrome.runtime.getURL` in `ocr.js`, and since v1.3.49 the bundled Tesseract files contain no URL at all.
+
+There is no `tabs` permission since v1.3.52. Background tabs are opened with `chrome.tabs.create`, which needs no permission, and the host permissions above already let the extension see the URL of its own Attendance, Moodle, Ed and Gmail tabs.
+
+## Test instructions tab
+
+The extension needs a Monash University student account (Monash Attendance, Moodle, Ed and a Gmail inbox that receives unit emails), so a reviewer without one can check the following:
+
+1. Install, click the toolbar icon. The popup shows the last scan and three buttons.
+2. Click 设置 (Settings). The options page shows the semester start date, the reminder schedule, optional manual units and the semester history export. Everything is stored locally.
+3. Click 查看确认页 (Review). The confirmation page lists found codes after a scan. The submit button stays disabled until at least one class is picked and the "I attended these classes" box is ticked.
+4. Open DevTools on any extension page: every script, the OCR worker, the WebAssembly core and the language data load from chrome-extension:// URLs. The extension makes no request to any host outside the host permissions.
+
+Screenshots of a real scan are in the store listing.
 
 **Data usage** – tick: Personally identifiable information, Personal communications, Website content. Do not tick: health, financial, authentication information, location, user activity.
 Then certify all three statements: not sold to third parties; not used for purposes unrelated to the single purpose; not used for creditworthiness or lending.
@@ -93,8 +105,10 @@ Then certify all three statements: not sold to third parties; not used for purpo
 2. New item → upload the zip.
 3. Fill in Store listing, Privacy practices (above), Distribution (Public, or Unlisted if it should only be shared by link) → Submit for review. Review usually takes from a few days to a few weeks; a change of permissions on a later update triggers a fresh review.
 
-## Rebuild the package
+## Build the package
 
 ```bash
-cd extension && rm -f ../store/monash-attendance-helper-1.3.51.zip && zip -qr ../store/monash-attendance-helper-1.3.51.zip . -x '*.DS_Store'
+bash scripts/build-store-zip.sh
 ```
+
+It zips `extension/` with `manifest.json` at the root and then scans the zip. It stops without a zip if it finds a CDN host, any URL inside the bundled Tesseract files, a remote `<script>` or stylesheet, a remote import, `eval` or `new Function` in our own code, or a remote origin in the CSP. CI runs the same script on every pull request.
