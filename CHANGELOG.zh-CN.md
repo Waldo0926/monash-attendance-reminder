@@ -1,5 +1,8 @@
 # 更新日志
 
+## v1.3.52
+重新提交 Chrome 应用商店。去掉了 `tabs` 权限：后台标签页用 `chrome.tabs.create` 打开，这个不需要权限；扩展只读 Attendance、Moodle、Ed 和 Gmail 标签页的网址和标题，已有的网站权限就能看到。在 Chromium 里装上扩展核对过，`chrome.tabs.query` 照样能拿到打开着的 Ed 帖子网址，其他网站仍然看不到，所以安装时 Chrome 不再提示“读取浏览记录”。新增 `scripts/build-store-zip.sh` 打包商店 zip，包里有 CDN 地址、内置 Tesseract 文件里有任何网址、页面加载外部脚本或样式、代码远程 import、用 `eval` 或 `new Function`、CSP 放行外部来源，任一项都会报错并且不生成 zip。CI 每个 PR 都跑这个脚本，以前只在 main 上查。OCR 也完整跑了一遍并记录所有非扩展请求：从测试图里读出 “Workshop 02 GU2ZP” 和 “Tutorial 16 ST8CT”，没有发出任何网络请求。`store/LISTING.md` 更新了权限说明、远程代码一栏和测试说明。
+
 ## v1.3.51
 修复提交显示成功但其实没签上的问题。用户勾选 FIT3162 Studio 01（BY5YY）和 FIT2109 Workshop 02 后点提交，页面显示“已处理 2/2”，但 Attendance 里 Studio 01 仍是问号。原来的“成功”只表示点到了某个元素。Attendance 是 ASP.NET 页面，整页就是一个表单，找按钮时把页头页脚的链接也算进去了，取第一个文字里带 enter 之类词的元素。扩展还把这两条记成已提交，之后每次都直接跳过。现在找按钮只看真正的按钮，或者回传和页内链接，不会点 Home、Back、Cancel、Logout。点完以后，扩展用新标签页重新打开 Attendance 当天的页面，只有那一行显示已完成才算签上。确认页每节课单独一行显示结果，失败时写明原因（例如“已点击提交，但 Attendance 仍显示未签到”）。下次只跳过核对成功的记录，旧版本误记为成功的可以重新提交。每次提交还会在调试日志里写一条 submit result，记下点了哪个按钮和 Attendance 显示了什么。
 

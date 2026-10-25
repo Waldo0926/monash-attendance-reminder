@@ -22,34 +22,15 @@ jobs:
       - name: Test extension parser
         run: node --test tests/*.test.mjs
 
-      - name: Read extension version
-        if: github.event_name == 'push'
-        id: version
-        run: |
-          VERSION=$(node -e "console.log(require('./extension/manifest.json').version)")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Package Chrome extension
-        if: github.event_name == 'push'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          cd extension
-          zip -qr "../monash-attendance-helper-${VERSION}.zip" . -x '*.DS_Store'
-
-      - name: Verify packaged MV3 OCR code
-        if: github.event_name == 'push'
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          unzip -p "monash-attendance-helper-${VERSION}.zip" manifest.json | grep -q "\"version\": \"${VERSION}\""
-          if unzip -p "monash-attendance-helper-${VERSION}.zip" vendor/tesseract.esm.min.js | grep -Eiq 'https?://|cdn\.jsdelivr\.net'; then exit 1; fi
-          if unzip -p "monash-attendance-helper-${VERSION}.zip" vendor/worker.min.js | grep -Eiq 'https?://|cdn\.jsdelivr\.net'; then exit 1; fi
+      - name: Build store package and scan for remote code
+        run: bash scripts/build-store-zip.sh
 
       - name: Upload Chrome extension package
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: chrome-extension-package
-          path: monash-attendance-helper-${{ steps.version.outputs.version }}.zip
+          path: store/monash-attendance-helper-*.zip
           if-no-files-found: error
           compression-level: 0
 

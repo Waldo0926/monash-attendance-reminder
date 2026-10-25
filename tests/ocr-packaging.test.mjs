@@ -31,6 +31,16 @@ test("bundled Tesseract executable code has no remotely hosted code fallbacks", 
   }
 });
 
+test("store package has no CDN hosts and only the permissions the listing justifies", async () => {
+  const { readdir } = await import("node:fs/promises");
+  const files = (await readdir(extension, { recursive: true })).filter((name) => /\.(m?js|html|json)$/.test(name));
+  for (const name of files) {
+    assert.doesNotMatch(await text(name), /jsdelivr|unpkg\.com|cdnjs|esm\.sh|skypack/i, `${name} must not reference a CDN`);
+  }
+  const manifest = JSON.parse(await text("manifest.json"));
+  assert.deepEqual([...manifest.permissions].sort(), ["alarms", "notifications", "offscreen", "scripting", "storage"]);
+});
+
 test("disables Tesseract's blob worker so the OCR worker satisfies the MV3 CSP", async () => {
   const source = await text("ocr.js");
   assert.match(source, /workerBlobURL:\s*false/);
@@ -67,7 +77,7 @@ test("reports image content type, byte length and magic bytes when decoding fail
 
 test("manifest keeps OCR in an offscreen document with local workers and WebAssembly enabled", async () => {
   const manifest = JSON.parse(await text("manifest.json"));
-  assert.equal(manifest.version, "1.3.51");
+  assert.equal(manifest.version, "1.3.52");
   assert.ok(manifest.permissions.includes("offscreen"));
   assert.match(manifest.content_security_policy.extension_pages, /wasm-unsafe-eval/);
   assert.match(manifest.content_security_policy.extension_pages, /worker-src 'self'/);
