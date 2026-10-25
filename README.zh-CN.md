@@ -4,10 +4,13 @@
 [![技术](https://img.shields.io/badge/%E6%8A%80%E6%9C%AF-JavaScript-7c3aed?style=for-the-badge)](#)
 [![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows_%7C_macOS_%7C_Linux-16a34a?style=for-the-badge)](#平台支持)
 [![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-%E4%BF%9D%E7%95%99%E6%89%80%E6%9C%89%E6%9D%83%E5%88%A9-dc2626?style=for-the-badge)](#)
+[![文档](https://img.shields.io/badge/%E6%96%87%E6%A1%A3-docs.secureview.tech-1e5eff?style=for-the-badge)](https://docs.secureview.tech/zh-cn/attendance/)
 
 [English](README.md) | **简体中文**
 
-> 当前扩展版本：**v1.3.51**。完整版本记录见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
+> 当前扩展版本：**v1.3.52**。完整版本记录见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
+>
+> 带图的安装和使用教程：[docs.secureview.tech/zh-cn/attendance](https://docs.secureview.tech/zh-cn/attendance/)。扩展已于 2026 年 10 月 25 日提交 Chrome 应用商店审核，上架前按下面的方法用 zip 安装。
 
 一个注重隐私、**跨平台**的 Chrome 扩展，帮助 Monash 学生自动发现近期需要处理的考勤活动，从 Gmail、Ed Discussion 和 Moodle 中寻找对应的 Attendance Code，在提交前集中核对，并且只会在学生明确确认后才提交。
 
@@ -102,7 +105,7 @@ Moodle 查找不只是停留在 `My units` 页面。
 
 ## Chrome 安装方法（Windows / macOS / Linux）
 
-1. 打开这个仓库的 GitHub 页面，点击绿色的 **Code** 按钮，再点 **Download ZIP**。如果你已经会用 git，也可以直接 `git clone`。
+1. 下载 [monash-attendance-helper.zip](https://docs.secureview.tech/downloads/monash-attendance-helper.zip)。这个包每天从本仓库的 `extension` 文件夹自动打包，永远是当前版本。（也可以打开这个仓库的 GitHub 页面，点击绿色的 **Code** 按钮，再点 **Download ZIP**；会用 git 的话直接 `git clone` 也行。）
 2. 找到下载下来的压缩包，一般在“下载”文件夹里，把它解压出来。Windows 上右键点击压缩包选择“全部解压”，macOS 上直接双击压缩包就会自动解压。
 3. 打开 Chrome，访问 `chrome://extensions`。
 4. 打开右上角的 **开发者模式** 开关。

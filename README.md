@@ -4,10 +4,13 @@
 [![Tech](https://img.shields.io/badge/Tech-JavaScript-7c3aed?style=for-the-badge)](#)
 [![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-16a34a?style=for-the-badge)](#platform-support)
 [![License](https://img.shields.io/badge/License-All_Rights_Reserved-dc2626?style=for-the-badge)](#)
+[![Docs](https://img.shields.io/badge/Docs-docs.secureview.tech-1e5eff?style=for-the-badge)](https://docs.secureview.tech/attendance/)
 
 **English** | [简体中文](README.zh-CN.md)
 
-> Current extension build: **v1.3.51**. Full version history: [CHANGELOG.md](CHANGELOG.md).
+> Current extension build: **v1.3.52**. Full version history: [CHANGELOG.md](CHANGELOG.md).
+>
+> Step-by-step guide with pictures: [docs.secureview.tech/attendance](https://docs.secureview.tech/attendance/). The extension was submitted to the Chrome Web Store on 25 October 2026 and is waiting for review; until it is listed, install it from the zip as described below.
 
 A privacy-focused, cross-platform Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 
@@ -100,7 +103,7 @@ A completed record is displayed as completed and cannot be submitted again. Ever
 
 ## Install in Chrome (Windows / macOS / Linux)
 
-1. Open this repository's GitHub page, click the green **Code** button, then **Download ZIP**. (If you already use git, `git clone` works too.)
+1. Download [monash-attendance-helper.zip](https://docs.secureview.tech/downloads/monash-attendance-helper.zip). It is packed every day from this repository's `extension` folder, so it is always the current version. (Or open this repository's GitHub page, click the green **Code** button, then **Download ZIP**; `git clone` works too.)
 2. Find the downloaded ZIP file, usually in your Downloads folder, and extract it. On Windows, right click the file and choose **Extract All**. On macOS, double click the ZIP to unzip it.
 3. Open Chrome and go to `chrome://extensions`.
 4. Turn on **Developer mode** using the toggle in the top right corner.
