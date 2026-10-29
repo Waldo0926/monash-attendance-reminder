@@ -5,12 +5,13 @@
 [![平台](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows_%7C_macOS_%7C_Linux-16a34a?style=for-the-badge)](#平台支持)
 [![许可证](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-%E4%BF%9D%E7%95%99%E6%89%80%E6%9C%89%E6%9D%83%E5%88%A9-dc2626?style=for-the-badge)](#)
 [![文档](https://img.shields.io/badge/%E6%96%87%E6%A1%A3-docs.secureview.tech-1e5eff?style=for-the-badge)](https://docs.secureview.tech/zh-cn/attendance/)
+[![Chrome 应用商店](https://img.shields.io/badge/Chrome_%E5%BA%94%E7%94%A8%E5%95%86%E5%BA%97-%E6%B7%BB%E5%8A%A0%E8%87%B3_Chrome-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/monash-attendance-helper/mnbkcmgkjmfngcifndchaidndhdfafcd?hl=zh-CN)
 
 [English](README.md) | **简体中文**
 
 > 当前扩展版本：**v1.3.52**。完整版本记录见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
 >
-> 带图的安装和使用教程：[docs.secureview.tech/zh-cn/attendance](https://docs.secureview.tech/zh-cn/attendance/)。扩展已于 2026 年 10 月 25 日提交 Chrome 应用商店审核，上架前按下面的方法用 zip 安装。
+> 已上架 Chrome 应用商店：[Monash Attendance Helper](https://chromewebstore.google.com/detail/monash-attendance-helper/mnbkcmgkjmfngcifndchaidndhdfafcd?hl=zh-CN)。带图的安装和使用教程：[docs.secureview.tech/zh-cn/attendance](https://docs.secureview.tech/zh-cn/attendance/)。
 
 一个注重隐私、**跨平台**的 Chrome 扩展，帮助 Monash 学生自动发现近期需要处理的考勤活动，从 Gmail、Ed Discussion 和 Moodle 中寻找对应的 Attendance Code，在提交前集中核对，并且只会在学生明确确认后才提交。
 
@@ -46,7 +47,7 @@
 
 ## 平台支持
 
-这个项目是 **Chrome 扩展 + 浏览器端 Web 配置器**，并不是 macOS 原生应用。只要桌面 Chrome/Chromium 环境支持项目所需的扩展 API，同一套安装和使用方式可用于 **Windows、macOS 和 Linux**。
+这个项目是 **Chrome 扩展 + 浏览器端 Web 配置器**，并不是 macOS 原生应用。只要桌面 Chrome/Chromium 环境支持项目所需的扩展 API，不管是从应用商店装还是手动加载，同一个扩展都可用于 **Windows、macOS 和 Linux**。
 
 扩展本身没有 macOS 专属运行时依赖。仓库中少量与 macOS 开发环境有关的注释或测试，仅用于开发/回归场景，不代表用户端只能在 macOS 上运行。
 
@@ -105,17 +106,26 @@ Moodle 查找不只是停留在 `My units` 页面。
 
 ## Chrome 安装方法（Windows / macOS / Linux）
 
+### 从 Chrome 应用商店安装（推荐）
+
+1. 打开 [Chrome 应用商店里的 Monash Attendance Helper](https://chromewebstore.google.com/detail/monash-attendance-helper/mnbkcmgkjmfngcifndchaidndhdfafcd?hl=zh-CN)，点 **添加至 Chrome**。之后 Chrome 会自己更新它。
+2. 点一下地址栏旁边的拼图图标，把 **Monash Attendance Helper** 固定出来，方便以后点击。
+3. 点击扩展图标，或者右键点击它选择“选项”，打开扩展的设置页面。
+4. 让 Gmail、Monash Moodle、Ed Discussion（如果你的课程用到）和 Monash Attendance 都登录在扩展所在的同一个 Chrome Profile 里。
+5. 在设置页面里，保持自动 Attendance 发现开启，填好本学期 Week 1 星期一的日期，再选好提醒时间。
+6. 点击 **保存后立即测试**。这一步会在后台一次性完成普通扫描和最终 Attendance 核对，两步都跑完之后才会显示找到了多少节课和签到码，中途不用一直停留在设置页面。
+
+### 用 zip 手动加载
+
+想在新改动上架之前先试，或者你的 Chrome 装不了商店扩展，再用这种方式。同一个 Chrome Profile 里不要两个都装，不然提醒会弹两遍。
+
 1. 下载 [monash-attendance-helper.zip](https://docs.secureview.tech/downloads/monash-attendance-helper.zip)。这个包每天从本仓库的 `extension` 文件夹自动打包，永远是当前版本。（也可以打开这个仓库的 GitHub 页面，点击绿色的 **Code** 按钮，再点 **Download ZIP**；会用 git 的话直接 `git clone` 也行。）
 2. 找到下载下来的压缩包，一般在“下载”文件夹里，把它解压出来。Windows 上右键点击压缩包选择“全部解压”，macOS 上直接双击压缩包就会自动解压。
 3. 打开 Chrome，访问 `chrome://extensions`。
 4. 打开右上角的 **开发者模式** 开关。
 5. 点击 **加载已解压的扩展程序**。
 6. 在弹出的文件选择窗口里，进入刚才解压出来的文件夹，选中里面的 **extension** 子文件夹，不是仓库最外层那个文件夹。
-7. 这时候扩展图标应该已经出现在工具栏了。点一下地址栏旁边的拼图图标，把 **Monash Attendance Helper** 固定出来，方便以后点击。
-8. 点击扩展图标，或者右键点击它选择“选项”，打开扩展的设置页面。
-9. 让 Gmail、Monash Moodle、Ed Discussion（如果你的课程用到）和 Monash Attendance 都登录在扩展所在的同一个 Chrome Profile 里。
-10. 在设置页面里，保持自动 Attendance 发现开启，填好本学期 Week 1 星期一的日期，再选好提醒时间。
-11. 点击 **保存后立即测试**。这一步会在后台一次性完成普通扫描和最终 Attendance 核对，两步都跑完之后才会显示找到了多少节课和签到码，中途不用一直停留在设置页面。
+7. 接着从上面商店安装的第 2 步往下做。
 
 之后如果你从仓库拉取了更新，记得回到 `chrome://extensions` 对这个未打包的扩展点一下重新加载。页面上显示的版本号应该和 `extension/manifest.json` 里的一致。
 

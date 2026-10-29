@@ -5,12 +5,13 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-16a34a?style=for-the-badge)](#platform-support)
 [![License](https://img.shields.io/badge/License-All_Rights_Reserved-dc2626?style=for-the-badge)](#)
 [![Docs](https://img.shields.io/badge/Docs-docs.secureview.tech-1e5eff?style=for-the-badge)](https://docs.secureview.tech/attendance/)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Add_to_Chrome-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/monash-attendance-helper/mnbkcmgkjmfngcifndchaidndhdfafcd)
 
 **English** | [简体中文](README.zh-CN.md)
 
 > Current extension build: **v1.3.52**. Full version history: [CHANGELOG.md](CHANGELOG.md).
 >
-> Step-by-step guide with pictures: [docs.secureview.tech/attendance](https://docs.secureview.tech/attendance/). The extension was submitted to the Chrome Web Store on 25 October 2026 and is waiting for review; until it is listed, install it from the zip as described below.
+> Now on the Chrome Web Store: [Monash Attendance Helper](https://chromewebstore.google.com/detail/monash-attendance-helper/mnbkcmgkjmfngcifndchaidndhdfafcd). Step-by-step guide with pictures: [docs.secureview.tech/attendance](https://docs.secureview.tech/attendance/).
 
 A privacy-focused, cross-platform Chrome extension that helps Monash students discover recent attendance activities, find matching attendance codes from Gmail, Ed Discussion, and Moodle, review the results, and submit only after explicit confirmation.
 
@@ -46,7 +47,7 @@ Reminder times use the **current system timezone of the computer running Chrome*
 
 ## Platform support
 
-This project is a Chrome extension plus a browser-based configurator, not a native macOS application. The same unpacked-extension workflow is intended to work on **Windows, macOS, and Linux** wherever a compatible desktop Chrome/Chromium environment provides the required extension APIs.
+This project is a Chrome extension plus a browser-based configurator, not a native macOS application. The same extension, from the Chrome Web Store or loaded unpacked, is intended to work on **Windows, macOS, and Linux** wherever a compatible desktop Chrome/Chromium environment provides the required extension APIs.
 
 There are no macOS-only runtime dependencies in the extension itself. Platform-specific development comments or tests in the repository do not make the user-facing extension macOS-only.
 
@@ -103,17 +104,26 @@ A completed record is displayed as completed and cannot be submitted again. Ever
 
 ## Install in Chrome (Windows / macOS / Linux)
 
+### From the Chrome Web Store (recommended)
+
+1. Open [Monash Attendance Helper on the Chrome Web Store](https://chromewebstore.google.com/detail/monash-attendance-helper/mnbkcmgkjmfngcifndchaidndhdfafcd) and click **Add to Chrome**. Chrome updates it by itself from then on.
+2. Click the puzzle piece icon next to the address bar and pin **Monash Attendance Helper** if you want quick access.
+3. Click the extension icon, or right click it and choose **Options**, to open the settings page.
+4. Sign in to Gmail, Monash Moodle, Ed Discussion (if your units use it), and Monash Attendance in the same Chrome profile the extension is running in.
+5. On the settings page, keep automatic Attendance discovery turned on, set this semester's Week 1 Monday date, and choose your reminder time(s).
+6. Click **Save, then test now**. This runs the preliminary scan and the final Attendance reconciliation as one background step, and reports how many classes and codes it found once both are done. You don't need to keep the settings page open the whole time.
+
+### From the zip (unpacked)
+
+Use this if you want to try a change before it reaches the store, or if your Chrome can't install from the store. Don't keep both installed in the same profile, or you will get two sets of reminders.
+
 1. Download [monash-attendance-helper.zip](https://docs.secureview.tech/downloads/monash-attendance-helper.zip). It is packed every day from this repository's `extension` folder, so it is always the current version. (Or open this repository's GitHub page, click the green **Code** button, then **Download ZIP**; `git clone` works too.)
 2. Find the downloaded ZIP file, usually in your Downloads folder, and extract it. On Windows, right click the file and choose **Extract All**. On macOS, double click the ZIP to unzip it.
 3. Open Chrome and go to `chrome://extensions`.
 4. Turn on **Developer mode** using the toggle in the top right corner.
 5. Click **Load unpacked**.
 6. In the folder picker, open the extracted folder and select the **extension** subfolder inside it, not the top level repository folder.
-7. The extension icon should now appear in the toolbar. Click the puzzle piece icon next to the address bar and pin **Monash Attendance Helper** if you want quick access.
-8. Click the extension icon, or right click it and choose **Options**, to open the settings page.
-9. Sign in to Gmail, Monash Moodle, Ed Discussion (if your units use it), and Monash Attendance in the same Chrome profile the extension is running in.
-10. On the settings page, keep automatic Attendance discovery turned on, set this semester's Week 1 Monday date, and choose your reminder time(s).
-11. Click **Save, then test now**. This runs the preliminary scan and the final Attendance reconciliation as one background step, and reports how many classes and codes it found once both are done. You don't need to keep the settings page open the whole time.
+7. Carry on from step 2 of the store install above.
 
 After pulling repository updates later, return to `chrome://extensions` and reload the unpacked extension. The version shown there should match `extension/manifest.json`.
 
